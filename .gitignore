@@ -1,0 +1,25 @@
+# Secrets — never commit these
+.env
+google_credentials.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Database (Railway uses a persistent volume instead)
+backend/lea.db
+backend/sourcing.db
+backend/lea_sourcing.db
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# OS files
+.DS_Store
+Thumbs.db

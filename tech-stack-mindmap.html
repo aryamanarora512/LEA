@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>LEA Sourcing Tool — Tech Stack</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0f0f1a; font-family: 'Segoe UI', system-ui, sans-serif; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 32px; }
+  svg text { font-family: 'Segoe UI', system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<svg viewBox="0 0 1200 820" width="1200" height="820" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <marker id="arrow-blue" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#3b82f6" opacity="0.6"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#22c55e" opacity="0.6"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#a855f7" opacity="0.6"/>
+    </marker>
+    <marker id="arrow-amber" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#f59e0b" opacity="0.6"/>
+    </marker>
+    <radialGradient id="center-grad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#2d1b69"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background grid -->
+  <rect width="1200" height="820" fill="#0f0f1a"/>
+  <line x1="600" y1="0" x2="600" y2="820" stroke="#ffffff" stroke-width="0.3" stroke-opacity="0.05"/>
+  <line x1="0" y1="410" x2="1200" y2="410" stroke="#ffffff" stroke-width="0.3" stroke-opacity="0.05"/>
+
+  <!-- ═══════════════ CONNECTOR LINES ═══════════════ -->
+  <!-- Center to Data Sources (top-left) -->
+  <line x1="545" y1="370" x2="250" y2="200" stroke="#3b82f6" stroke-width="1.5" stroke-opacity="0.4" stroke-dasharray="6,3" marker-end="url(#arrow-blue)"/>
+  <!-- Center to Backend (bottom-left) -->
+  <line x1="535" y1="445" x2="240" y2="590" stroke="#22c55e" stroke-width="1.5" stroke-opacity="0.4" stroke-dasharray="6,3" marker-end="url(#arrow-green)"/>
+  <!-- Center to Scoring Engine (top-right) -->
+  <line x1="655" y1="370" x2="950" y2="195" stroke="#a855f7" stroke-width="1.5" stroke-opacity="0.4" stroke-dasharray="6,3" marker-end="url(#arrow-purple)"/>
+  <!-- Center to Frontend (bottom-right) -->
+  <line x1="660" y1="445" x2="960" y2="590" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.4" stroke-dasharray="6,3" marker-end="url(#arrow-amber)"/>
+
+  <!-- ═══════════════ CENTER NODE ═══════════════ -->
+  <ellipse cx="600" cy="410" rx="100" ry="55" fill="url(#center-grad)" filter="url(#glow)"/>
+  <ellipse cx="600" cy="410" rx="100" ry="55" fill="none" stroke="#818cf8" stroke-width="1.5"/>
+  <text x="600" y="403" text-anchor="middle" fill="white" font-size="13" font-weight="700" letter-spacing="0.5">LEA Sourcing</text>
+  <text x="600" y="421" text-anchor="middle" fill="#a5b4fc" font-size="11" font-weight="500">Tool v1.0</text>
+
+  <!-- ═══════════════ TOP-LEFT: DATA SOURCES ═══════════════ -->
+  <rect x="30" y="60" width="310" height="300" rx="14" fill="#0d1b2e" stroke="#3b82f6" stroke-width="1.2" stroke-opacity="0.5"/>
+  <rect x="30" y="60" width="310" height="36" rx="14" fill="#1d3a5e"/>
+  <rect x="30" y="82" width="310" height="14" rx="0" fill="#1d3a5e"/>
+  <text x="51" y="83" fill="#60a5fa" font-size="10" font-weight="700" letter-spacing="1.5">DATA SOURCES</text>
+  <circle cx="43" cy="79" r="5" fill="#3b82f6"/>
+
+  <!-- DS items -->
+  <g transform="translate(46, 110)">
+    <!-- Google Places -->
+    <rect x="0" y="0" width="280" height="34" rx="6" fill="#1e3a5f" stroke="#3b82f6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="12" cy="17" r="5" fill="#4285F4"/>
+    <text x="24" y="13" fill="#93c5fd" font-size="10" font-weight="600">Google Places API</text>
+    <text x="24" y="26" fill="#64748b" font-size="9">Stars · Review Volume · Sentiment</text>
+
+    <!-- CourtListener -->
+    <rect x="0" y="42" width="280" height="34" rx="6" fill="#1e3a5f" stroke="#3b82f6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="12" cy="59" r="5" fill="#22c55e"/>
+    <text x="24" y="55" fill="#93c5fd" font-size="10" font-weight="600">CourtListener API <tspan fill="#22c55e" font-size="8">[FREE]</tspan></text>
+    <text x="24" y="68" fill="#64748b" font-size="9">Case Volume · Dockets · Jurisdiction</text>
+
+    <!-- AVVO -->
+    <rect x="0" y="84" width="280" height="34" rx="6" fill="#1e3a5f" stroke="#3b82f6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="12" cy="101" r="5" fill="#f59e0b"/>
+    <text x="24" y="97" fill="#93c5fd" font-size="10" font-weight="600">AVVO Scraper</text>
+    <text x="24" y="110" fill="#64748b" font-size="9">Attorney Ratings · Disciplinary History</text>
+
+    <!-- Firm Website -->
+    <rect x="0" y="126" width="280" height="34" rx="6" fill="#1e3a5f" stroke="#3b82f6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="12" cy="143" r="5" fill="#a855f7"/>
+    <text x="24" y="139" fill="#93c5fd" font-size="10" font-weight="600">Firm Website Scraper</text>
+    <text x="24" y="152" fill="#64748b" font-size="9">Practice Areas · Team Size · Tech Stack</text>
+
+    <!-- State Bar -->
+    <rect x="0" y="168" width="280" height="34" rx="6" fill="#1e3a5f" stroke="#3b82f6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="12" cy="185" r="5" fill="#ec4899"/>
+    <text x="24" y="181" fill="#93c5fd" font-size="10" font-weight="600">State Bar Databases</text>
+    <text x="24" y="194" fill="#64748b" font-size="9">Bar Admission Yr · Complaints · Status</text>
+
+    <!-- SpyFu -->
+    <rect x="0" y="210" width="135" height="34" rx="6" fill="#1e3a5f" stroke="#3b82f6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="12" cy="227" r="5" fill="#f43f5e"/>
+    <text x="24" y="223" fill="#93c5fd" font-size="10" font-weight="600">SpyFu API</text>
+    <text x="24" y="236" fill="#64748b" font-size="9">Ad Spend · SEO</text>
+
+    <rect x="145" y="210" width="135" height="34" rx="6" fill="#1e3a5f" stroke="#3b82f6" stroke-width="0.8" stroke-opacity="0.4"/>
+    <circle cx="157" cy="227" r="5" fill="#0077b5"/>
+    <text x="169" y="223" fill="#93c5fd" font-size="10" font-weight="600">LinkedIn API</text>
+    <text x="169" y="236" fill="#64748b" font-size="9">Headcount · Hiring</text>
+  </g>
+
+  <!-- ═══════════════ BOTTOM-LEFT: BACKEND ═══════════════ -->
+  <rect x="30" y="460" width="310" height="280" rx="14" fill="#0d2e1a" stroke="#22c55e" stroke-width="1.2" stroke-opacity="0.5"/>
+  <rect x="30" y="460" width="310" height="36" rx="14" fill="#1a4d2e"/>
+  <rect x="30" y="482" width="310" height="14" rx="0" fill="#1a4d2e"/>
+  <text x="51" y="483" fill="#4ade80" font-size="10" font-weight="700" letter-spacing="1.5">BACKEND</text>
+  <circle cx="43" cy="479" r="5" fill="#22c55e"/>
+
+  <g transform="translate(46, 507)">
+    <rect x="0" y="0" width="130" height="50" rx="6" fill="#1a3d24" stroke="#22c55e" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="10" y="18" fill="#4ade80" font-size="11" font-weight="700">Python 3.12</text>
+    <text x="10" y="32" fill="#64748b" font-size="9">Core Language</text>
+    <text x="10" y="44" fill="#22c55e" font-size="8">🐍 Runtime</text>
+
+    <rect x="145" y="0" width="135" height="50" rx="6" fill="#1a3d24" stroke="#22c55e" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="155" y="18" fill="#4ade80" font-size="11" font-weight="700">FastAPI</text>
+    <text x="155" y="32" fill="#64748b" font-size="9">REST API Framework</text>
+    <text x="155" y="44" fill="#22c55e" font-size="8">⚡ Async / OpenAPI</text>
+
+    <rect x="0" y="60" width="130" height="50" rx="6" fill="#1a3d24" stroke="#22c55e" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="10" y="78" fill="#4ade80" font-size="11" font-weight="700">SQLite</text>
+    <text x="10" y="92" fill="#64748b" font-size="9">Local Storage</text>
+    <text x="10" y="104" fill="#22c55e" font-size="8">🗄 SQLAlchemy ORM</text>
+
+    <rect x="145" y="60" width="135" height="50" rx="6" fill="#1a3d24" stroke="#22c55e" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="155" y="78" fill="#4ade80" font-size="11" font-weight="700">httpx + BS4</text>
+    <text x="155" y="92" fill="#64748b" font-size="9">HTTP + Scraping</text>
+    <text x="155" y="104" fill="#22c55e" font-size="8">🔍 BeautifulSoup4</text>
+
+    <rect x="0" y="120" width="130" height="50" rx="6" fill="#1a3d24" stroke="#22c55e" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="10" y="138" fill="#4ade80" font-size="11" font-weight="700">VADER NLP</text>
+    <text x="10" y="152" fill="#64748b" font-size="9">Sentiment Analysis</text>
+    <text x="10" y="164" fill="#22c55e" font-size="8">🧠 Review Scoring</text>
+
+    <rect x="145" y="120" width="135" height="50" rx="6" fill="#1a3d24" stroke="#22c55e" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="155" y="138" fill="#4ade80" font-size="11" font-weight="700">APScheduler</text>
+    <text x="155" y="152" fill="#64748b" font-size="9">Scheduled Refresh</text>
+    <text x="155" y="164" fill="#22c55e" font-size="8">⏱ Cron Jobs</text>
+
+    <rect x="0" y="180" width="280" height="34" rx="6" fill="#0d2e1a" stroke="#22c55e" stroke-width="0.8" stroke-opacity="0.3"/>
+    <text x="14" y="197" fill="#64748b" font-size="9">Uvicorn ASGI · Pydantic v2 · python-dotenv</text>
+    <text x="14" y="210" fill="#64748b" font-size="9">Playwright (JS-rendered pages) · Tenacity (retry)</text>
+  </g>
+
+  <!-- ═══════════════ TOP-RIGHT: SCORING ENGINE ═══════════════ -->
+  <rect x="860" y="60" width="310" height="295" rx="14" fill="#1a0d2e" stroke="#a855f7" stroke-width="1.2" stroke-opacity="0.5"/>
+  <rect x="860" y="60" width="310" height="36" rx="14" fill="#2d1a4d"/>
+  <rect x="860" y="82" width="310" height="14" rx="0" fill="#2d1a4d"/>
+  <text x="882" y="83" fill="#c084fc" font-size="10" font-weight="700" letter-spacing="1.5">SCORING ENGINE</text>
+  <circle cx="873" cy="79" r="5" fill="#a855f7"/>
+
+  <g transform="translate(876, 108)">
+    <!-- Factor 1 -->
+    <rect x="0" y="0" width="280" height="30" rx="5" fill="#2a1060" stroke="#a855f7" stroke-width="0.6" stroke-opacity="0.5"/>
+    <rect x="0" y="0" width="84" height="30" rx="5" fill="#4c1d95"/>
+    <text x="10" y="19" fill="#e9d5ff" font-size="10" font-weight="700">30%</text>
+    <text x="92" y="19" fill="#c4b5fd" font-size="10">Practice Area Tier (T1/T2/T3)</text>
+
+    <rect x="0" y="38" width="280" height="30" rx="5" fill="#2a1060" stroke="#a855f7" stroke-width="0.6" stroke-opacity="0.5"/>
+    <rect x="0" y="38" width="75" height="30" rx="5" fill="#4c1d95"/>
+    <text x="10" y="57" fill="#e9d5ff" font-size="10" font-weight="700">25%</text>
+    <text x="83" y="57" fill="#c4b5fd" font-size="10">Brand &amp; Digital Reputation</text>
+
+    <rect x="0" y="76" width="280" height="30" rx="5" fill="#2a1060" stroke="#a855f7" stroke-width="0.6" stroke-opacity="0.5"/>
+    <rect x="0" y="76" width="60" height="30" rx="5" fill="#4c1d95"/>
+    <text x="10" y="95" fill="#e9d5ff" font-size="10" font-weight="700">20%</text>
+    <text x="68" y="95" fill="#c4b5fd" font-size="10">Market Position &amp; Geography</text>
+
+    <rect x="0" y="114" width="280" height="30" rx="5" fill="#2a1060" stroke="#a855f7" stroke-width="0.6" stroke-opacity="0.5"/>
+    <rect x="0" y="114" width="45" height="30" rx="5" fill="#4c1d95"/>
+    <text x="10" y="133" fill="#e9d5ff" font-size="10" font-weight="700">15%</text>
+    <text x="53" y="133" fill="#c4b5fd" font-size="10">Financial Health &amp; Operations</text>
+
+    <rect x="0" y="152" width="280" height="30" rx="5" fill="#2a1060" stroke="#a855f7" stroke-width="0.6" stroke-opacity="0.5"/>
+    <rect x="0" y="152" width="30" height="30" rx="5" fill="#4c1d95"/>
+    <text x="10" y="171" fill="#e9d5ff" font-size="10" font-weight="700">10%</text>
+    <text x="38" y="171" fill="#c4b5fd" font-size="10">Growth Momentum Signals</text>
+
+    <!-- M&A modifier box -->
+    <rect x="0" y="195" width="280" height="50" rx="6" fill="#1a0830" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.6"/>
+    <text x="12" y="213" fill="#fbbf24" font-size="10" font-weight="700">M&amp;A READINESS MODIFIER</text>
+    <text x="12" y="228" fill="#9ca3af" font-size="9">Bar admission year → owner age → exit probability</text>
+    <text x="12" y="240" fill="#9ca3af" font-size="9">Succession gap + website staleness → acquisition signal</text>
+  </g>
+
+  <!-- ═══════════════ BOTTOM-RIGHT: FRONTEND ═══════════════ -->
+  <rect x="860" y="460" width="310" height="280" rx="14" fill="#1a1500" stroke="#f59e0b" stroke-width="1.2" stroke-opacity="0.5"/>
+  <rect x="860" y="460" width="310" height="36" rx="14" fill="#3d2e00"/>
+  <rect x="860" y="482" width="310" height="14" rx="0" fill="#3d2e00"/>
+  <text x="882" y="483" fill="#fbbf24" font-size="10" font-weight="700" letter-spacing="1.5">FRONTEND</text>
+  <circle cx="873" cy="479" r="5" fill="#f59e0b"/>
+
+  <g transform="translate(876, 510)">
+    <rect x="0" y="0" width="130" height="50" rx="6" fill="#3d2e00" stroke="#f59e0b" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="10" y="18" fill="#fbbf24" font-size="11" font-weight="700">React 18</text>
+    <text x="10" y="32" fill="#64748b" font-size="9">UI Framework (CDN)</text>
+    <text x="10" y="44" fill="#f59e0b" font-size="8">⚛ No build step</text>
+
+    <rect x="145" y="0" width="135" height="50" rx="6" fill="#3d2e00" stroke="#f59e0b" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="155" y="18" fill="#fbbf24" font-size="11" font-weight="700">Tailwind CSS</text>
+    <text x="155" y="32" fill="#64748b" font-size="9">Utility Styling (CDN)</text>
+    <text x="155" y="44" fill="#f59e0b" font-size="8">🎨 Figma-matched</text>
+
+    <rect x="0" y="60" width="130" height="50" rx="6" fill="#3d2e00" stroke="#f59e0b" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="10" y="78" fill="#fbbf24" font-size="11" font-weight="700">Recharts</text>
+    <text x="10" y="92" fill="#64748b" font-size="9">Score Distribution</text>
+    <text x="10" y="104" fill="#f59e0b" font-size="8">📊 Bar · Line charts</text>
+
+    <rect x="145" y="60" width="135" height="50" rx="6" fill="#3d2e00" stroke="#f59e0b" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="155" y="78" fill="#fbbf24" font-size="11" font-weight="700">Fetch API</text>
+    <text x="155" y="92" fill="#64748b" font-size="9">Backend REST calls</text>
+    <text x="155" y="104" fill="#f59e0b" font-size="8">🔗 JSON responses</text>
+
+    <rect x="0" y="120" width="280" height="50" rx="6" fill="#3d2e00" stroke="#f59e0b" stroke-width="0.8" stroke-opacity="0.4"/>
+    <text x="10" y="138" fill="#fbbf24" font-size="11" font-weight="700">UI Components (Figma-matched)</text>
+    <text x="10" y="152" fill="#64748b" font-size="9">KPI Tiles · Ranked Firm List · Score Bars</text>
+    <text x="10" y="164" fill="#64748b" font-size="9">Firm Detail Panel · Signal Badges · Distribution Chart</text>
+
+    <rect x="0" y="180" width="280" height="34" rx="6" fill="#1a1500" stroke="#f59e0b" stroke-width="0.6" stroke-opacity="0.3"/>
+    <text x="14" y="197" fill="#64748b" font-size="9">Served as static file by FastAPI · Port 8000</text>
+    <text x="14" y="210" fill="#64748b" font-size="9">Single HTML file · Zero build tooling needed</text>
+  </g>
+
+  <!-- ═══════════════ TITLE ═══════════════ -->
+  <text x="600" y="35" text-anchor="middle" fill="white" font-size="16" font-weight="700" letter-spacing="1">LEA M&amp;A Sourcing Tool — Tech Stack</text>
+  <text x="600" y="53" text-anchor="middle" fill="#64748b" font-size="11">Python FastAPI · React · SQLite · Multi-source scraping pipeline</text>
+
+  <!-- ═══════════════ FLOW ARROW CENTER-CENTER ═══════════════ -->
+  <text x="600" y="805" text-anchor="middle" fill="#334155" font-size="10">Data Sources → Backend scrapes + scores → React Dashboard → Investment Decisions</text>
+</svg>
+</body>
+</html>

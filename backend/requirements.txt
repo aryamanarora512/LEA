@@ -1,0 +1,15 @@
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+httpx==0.27.0
+beautifulsoup4==4.12.3
+pydantic==2.7.1
+python-dotenv==1.0.1
+vaderSentiment==3.3.2
+apscheduler==3.10.4
+lxml==5.2.1
+duckduckgo-search>=6.1.0
+
+# Google Sheets integration
+gspread==6.1.2
+google-auth==2.29.0
+google-auth-oauthlib==1.2.0

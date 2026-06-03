@@ -1,0 +1,2768 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>LEA — Legal Investment Intelligence</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/topojson/3.0.2/topojson.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { height: 100%; }
+  body { font-family: 'Inter', sans-serif; background: #F7F8FA; color: #111827; overflow: hidden; }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #f1f1f1; }
+  ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
+  @keyframes spin      { to { transform: rotate(360deg); } }
+  @keyframes fadeIn    { from { opacity:0; } to { opacity:1; } }
+  @keyframes slideRight{ from { opacity:0; transform:translateX(24px); } to { opacity:1; transform:translateX(0); } }
+  input, select, textarea, button { font-family: inherit; }
+  .res-row:hover  { background: #F5F7FF !important; cursor: pointer; }
+  .res-row.active { background: #EEF2FF !important; }
+  .wl-row:hover   { background: #F9FAFB !important; cursor: pointer; }
+  .wl-row.active  { background: #EEF2FF !important; }
+  .crm-card { cursor: pointer; transition: box-shadow 0.15s, transform 0.1s; }
+  .crm-card:hover { box-shadow: 0 6px 24px rgba(0,0,0,0.10) !important; transform: translateY(-2px); }
+  .crm-card.active { outline: 2px solid #6366F1; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: #F3F4F6; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+const API = "http://localhost:8000/api";
+
+const SCRAPER_CONFIG = [
+  { key:"courtlistener", source:"CourtListener",      variable:"Federal case filings & dockets",  freq:"Monthly",   color:"#1D4ED8", bg:"#EFF6FF" },
+  { key:"google_places",  source:"Google Places",      variable:"Star rating & review count",      freq:"Monthly",   color:"#16A34A", bg:"#F0FFF4" },
+  { key:"avvo",           source:"Avvo",               variable:"Attorney rating (1–10 scale)",    freq:"Monthly",   color:"#9333EA", bg:"#FAF5FF" },
+  { key:"sec_edgar",      source:"SEC EDGAR",          variable:"M&A transactions advised",        freq:"Monthly",   color:"#059669", bg:"#ECFDF5" },
+  { key:"news_press",     source:"NewsAPI",            variable:"Total press mention count",       freq:"Weekly",    color:"#D97706", bg:"#FFFBEB" },
+  { key:"news_wins",      source:"NewsAPI",            variable:"Notable case wins / verdicts",    freq:"Weekly",    color:"#D97706", bg:"#FFFBEB" },
+  { key:"news_negative",  source:"NewsAPI",            variable:"Negative press & controversy",    freq:"Weekly",    color:"#DC2626", bg:"#FEF2F2" },
+  { key:"news_laterals",  source:"NewsAPI",            variable:"Lateral hires & departures",      freq:"Monthly",   color:"#D97706", bg:"#FFFBEB" },
+  { key:"firm_website",   source:"Firm Website",       variable:"Headcount, CRM, practice areas", freq:"Quarterly", color:"#7C3AED", bg:"#F5F3FF" },
+  { key:"state_bar",      source:"State Bar",          variable:"Bar admission year & discipline", freq:"Monthly",   color:"#1D4ED8", bg:"#EFF6FF" },
+  { key:"martindale",     source:"Martindale-Hubbell", variable:"AV Preeminent status",           freq:"Quarterly", color:"#9333EA", bg:"#FAF5FF" },
+  { key:"linkedin",       source:"LinkedIn",           variable:"Headcount & hiring signals",      freq:"Monthly",   color:"#7C3AED", bg:"#F5F3FF" },
+];
+const PRACTICE_OPTIONS = [
+  "personal injury","auto accident","workers compensation","immigration",
+  "bankruptcy","criminal defense","family law","medical malpractice",
+  "employment law","real estate","business law","estate planning",
+  "civil litigation","social security",
+];
+const US_STATES = ["AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN",
+  "IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY",
+  "NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+const CRM_STAGES = [
+  { id:"prospect",   label:"Prospect",   color:"#6B7280", bg:"#F3F4F6", border:"#D1D5DB" },
+  { id:"contacted",  label:"Contacted",  color:"#D97706", bg:"#FFFBEB", border:"#FDE68A" },
+  { id:"followup",   label:"Follow-up",  color:"#7C3AED", bg:"#F5F3FF", border:"#DDD6FE" },
+  { id:"responded",  label:"Responded",  color:"#1D4ED8", bg:"#EFF6FF", border:"#BFDBFE" },
+  { id:"closed",     label:"Closed",     color:"#16A34A", bg:"#F0FDF4", border:"#BBF7D0" },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function Spinner({ size=28, color="#111827" }) {
+  return <div style={{width:size,height:size,border:`3px solid #E5E7EB`,borderTopColor:color,borderRadius:"50%",animation:"spin .7s linear infinite"}}/>;
+}
+function FirmAvatar({ name, size=36, bg="#111827", fontSize=14 }) {
+  return (
+    <div style={{width:size,height:size,borderRadius:Math.round(size*0.25),background:bg,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize}}>
+      {(name||"?").charAt(0).toUpperCase()}
+    </div>
+  );
+}
+function Stars({ rating, reviewCount, source }) {
+  if (!rating) return null;
+  return (
+    <span style={{fontSize:12,color:"#F59E0B",display:"inline-flex",alignItems:"center",gap:3}}>
+      ★ {rating.toFixed(1)}
+      <span style={{fontSize:11,color:"#9CA3AF",fontWeight:400}}>
+        ({reviewCount ? (reviewCount).toLocaleString() : "?"} {source||"Google"} reviews)
+      </span>
+    </span>
+  );
+}
+
+// ── ScraperCard + DataSourcesPanel ────────────────────────────────────────────
+function ResultPreview({ result }) {
+  if (!result) return null;
+  const r = result.result || result;
+  if (r.error) return <div style={{fontSize:11,color:"#D97706",marginTop:6,padding:"3px 8px",background:"#FFFBEB",borderRadius:4}}>⚠ {r.error.slice(0,80)}</div>;
+  if (r.total_cases_found!=null||r.courtlistener_case_count!=null) return <div style={{fontSize:11,color:"#374151",marginTop:5}}><b>{r.total_cases_found??r.courtlistener_case_count}</b> federal cases</div>;
+  if (r.google_stars!=null) return <div style={{fontSize:11,color:"#374151",marginTop:5}}>⭐ <b>{r.google_stars}</b> ({r.google_review_count||0} reviews)</div>;
+  if (r.avvo_rating!=null) return <div style={{fontSize:11,color:"#374151",marginTop:5}}>AVVO <b>{r.avvo_rating||"N/A"}</b>/10</div>;
+  if (r.total_articles!=null) return <div style={{fontSize:11,color:"#374151",marginTop:5}}><b>{r.total_articles}</b> articles</div>;
+  if (r.linkedin_headcount!=null||r.linkedin_headcount_range!=null) return <div style={{fontSize:11,color:"#374151",marginTop:5}}><b>{r.linkedin_headcount_range||r.linkedin_headcount+" employees"}</b>{r.linkedin_hiring?" · Hiring":""}</div>;
+  if (r.av_preeminent!=null) return <div style={{fontSize:11,color:"#374151",marginTop:5}}>{r.av_preeminent?"AV Preeminent":"No AV rating"}</div>;
+  return null;
+}
+
+function ScraperCard({ cfg, firmId, lastResult }) {
+  const [status, setStatus] = useState("idle");
+  const [result, setResult] = useState(lastResult||null);
+  const pollerRef = useRef(null);
+  useEffect(()=>{ if(lastResult){ setResult(lastResult); setStatus("done"); } },[lastResult]);
+  useEffect(()=>()=>{ if(pollerRef.current) clearInterval(pollerRef.current); },[]);
+  async function run() {
+    setStatus("running");
+    try {
+      const d = await fetch(`${API}/scrape`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({firm_id:firmId,source_key:cfg.key})}).then(r=>r.json());
+      if(d.error){ setStatus("error"); return; }
+      pollerRef.current = setInterval(async()=>{
+        const jr = await fetch(`${API}/scrape_jobs/${d.job_id}`).then(r=>r.json());
+        if(jr.status==="done"){ clearInterval(pollerRef.current); setStatus("done"); setResult(jr); }
+        else if(jr.status==="error"){ clearInterval(pollerRef.current); setStatus("error"); setResult({result:{error:jr.error||"Unknown"}}); }
+      },1500);
+    } catch(e){ setStatus("error"); }
+  }
+  const dotC = {idle:"#D1D5DB",running:"#F59E0B",done:"#16A34A",error:"#DC2626"}[status];
+  return (
+    <div style={{background:"white",border:"1px solid #E5E7EB",borderRadius:10,padding:14,display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}>
+        <div style={{flex:1}}>
+          <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.source}</span>
+          <div style={{fontSize:13,fontWeight:600,color:"#111827",marginTop:5,lineHeight:1.3}}>{cfg.variable}</div>
+        </div>
+        <div style={{width:9,height:9,borderRadius:"50%",background:dotC,flexShrink:0,marginTop:2}}/>
+      </div>
+      <div style={{fontSize:11,color:"#9CA3AF"}}>{cfg.freq}</div>
+      <ResultPreview result={result}/>
+      <button onClick={run} disabled={status==="running"} style={{marginTop:4,padding:"7px 0",border:"none",borderRadius:7,cursor:status==="running"?"not-allowed":"pointer",background:status==="running"?"#F3F4F6":"#111827",color:status==="running"?"#9CA3AF":"white",fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+        {status==="running"?<><span style={{display:"inline-block",width:10,height:10,border:"2px solid #9CA3AF",borderTopColor:"#6B7280",borderRadius:"50%",animation:"spin .6s linear infinite"}}/> Scraping...</>:"Scrape Now"}
+      </button>
+    </div>
+  );
+}
+
+function DataSourcesPanel({ firmId }) {
+  const [lastResults, setLastResults] = useState({});
+  const [running, setRunning] = useState(false);
+  const [doneCount, setDoneCount] = useState(0);
+  const pollerRef = useRef(null);
+  useEffect(()=>{
+    if(!firmId) return;
+    fetch(`${API}/firms/${firmId}/scrape_results`).then(r=>r.json()).then(data=>{
+      const map={}; data.forEach(r=>{ map[r.source_key]=r; }); setLastResults(map);
+    }).catch(()=>{});
+  },[firmId]);
+  async function scrapeAll() {
+    if(!firmId) return;
+    setRunning(true); setDoneCount(0);
+    try {
+      const d = await fetch(`${API}/scrape_all`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({firm_id:firmId,source_key:""})}).then(r=>r.json());
+      if(d.jobs){
+        const ids = d.jobs.map(j=>j.job_id);
+        pollerRef.current = setInterval(async()=>{
+          let done=0;
+          for(const id of ids){ const jr=await fetch(`${API}/scrape_jobs/${id}`).then(r=>r.json()).catch(()=>({})); if(jr.status==="done"||jr.status==="error") done++; }
+          setDoneCount(done);
+          if(done>=ids.length){ clearInterval(pollerRef.current); setRunning(false); }
+        },2000);
+      }
+    } catch(e){ setRunning(false); }
+  }
+  useEffect(()=>()=>{ if(pollerRef.current) clearInterval(pollerRef.current); },[]);
+  return (
+    <div style={{padding:"20px 24px"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+        <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>Data Sources <span style={{fontSize:12,color:"#9CA3AF",fontWeight:400}}>· {SCRAPER_CONFIG.length} sources</span></div>
+        <button onClick={scrapeAll} disabled={running||!firmId} style={{padding:"7px 14px",border:"none",borderRadius:8,cursor:(running||!firmId)?"not-allowed":"pointer",background:(running||!firmId)?"#F3F4F6":"#111827",color:(running||!firmId)?"#9CA3AF":"white",fontSize:12,fontWeight:700}}>
+          {running?`Running (${doneCount}/${SCRAPER_CONFIG.length})...`:"Scrape All"}
+        </button>
+      </div>
+      {!firmId && <div style={{fontSize:13,color:"#9CA3AF",textAlign:"center",padding:"20px 0"}}>Add firm to pipeline first to run scrapers</div>}
+      {firmId && <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>{SCRAPER_CONFIG.map(cfg=><ScraperCard key={cfg.key} cfg={cfg} firmId={firmId} lastResult={lastResults[cfg.key]||null}/>)}</div>}
+    </div>
+  );
+}
+
+// ── Outreach Panel ────────────────────────────────────────────────────────────
+// ── Outreach Panel ────────────────────────────────────────────────────────────
+// Simplified — AI analysis now lives in Overview. This panel just handles email.
+function OutreachPanel({ firm, enriched, insights }) {
+  const [loading,   setLoading]   = useState(false);
+  const [contact,   setContact]   = useState(null);
+  const [draft,     setDraft]     = useState("");
+  const [draftText, setDraftText] = useState("");
+  const [editMode,  setEditMode]  = useState(false);
+  const [copied,    setCopied]    = useState(false);
+  const [error,     setError]     = useState("");
+  const [showDraft, setShowDraft] = useState(false);
+  const [aiReady,   setAiReady]   = useState(null);
+
+  useEffect(() => {
+    fetch("/api/ai-status").then(r=>r.json()).then(d=>setAiReady(d.ready)).catch(()=>setAiReady(false));
+  }, []);
+
+  function generateLocalDraft() {
+    const leaderName = enriched?.leader?.name || firm.founder_name || insights?.best_contact_guess || "";
+    const firstName  = leaderName ? leaderName.split(",")[0].split(" ")[0] : "there";
+    const email      = enriched?.leader?.email || "";
+    const pa         = firm.practice_areas?.[0] || "personal injury";
+    const location   = `${firm.city}, ${firm.state}`;
+    const comm       = insights?.community_focus || "";
+    const hook       = insights?.outreach_hooks?.[0] || "";
+    const subject    = `Partnership Opportunity for ${firm.name} — LEA Investment`;
+    const body =
+`Dear ${firstName},
+
+My name is [Your Name], and I'm reaching out from LEA Investment — a firm that specialises in partnering with and acquiring leading ${pa} law firms across the United States.
+
+We've been tracking high-quality firms in ${location}${comm ? `, and ${firm.name}'s focus on ${comm} stood out to us` : ` and ${firm.name} stood out as a strong candidate`}.
+${hook ? "\n" + hook + "\n" : ""}
+We work with founding partners to provide liquidity, growth capital, and a clear succession pathway — without disrupting day-to-day operations.
+
+Would you have 20 minutes for a confidential call this week?
+
+Best regards,
+[Your Name]
+LEA Investment`;
+    setDraft(body); setDraftText(body); setShowDraft(true);
+    if (email) window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  }
+
+  async function runAIEmail() {
+    setLoading(true); setError(""); setShowDraft(false);
+    try {
+      const resp = await fetch("/api/ai-outreach", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          firm_name: firm.name, city: firm.city, state: firm.state||"",
+          website: firm.website||enriched?.website||"",
+          contact_name: enriched?.leader?.name||insights?.best_contact_guess||"",
+          sender_name: "[Your Name]",
+          insights: insights||{},
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail||"Email generation failed");
+      setDraft(data.email||""); setDraftText(data.email||""); setShowDraft(true);
+    } catch(e) { setError(e.message); generateLocalDraft(); }
+    finally    { setLoading(false); }
+  }
+
+  async function findContactAndDraft() {
+    if (!firm.pipeline_id) { generateLocalDraft(); return; }
+    setLoading(true); setError(""); setContact(null); setShowDraft(false);
+    try {
+      const r = await fetch(`${API}/firms/${firm.pipeline_id}/contact`);
+      if (!r.ok) throw new Error(await r.text());
+      const data = await r.json(); setContact(data);
+      const r2 = await fetch(`${API}/firms/${firm.pipeline_id}/draft-email`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ firm_id:firm.pipeline_id, leader_name:data.leader?.name||"" }),
+      });
+      const d2 = await r2.json();
+      setDraft(d2.draft||""); setDraftText(d2.draft||""); setShowDraft(true);
+    } catch(e) { setError(e.message||"Error"); generateLocalDraft(); }
+    finally    { setLoading(false); }
+  }
+
+  function handleCopy() {
+    navigator.clipboard.writeText(editMode?draftText:draft);
+    setCopied(true); setTimeout(()=>setCopied(false),2000);
+  }
+
+  return (
+    <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:14}}>
+      <div>
+        <div style={{fontSize:14,fontWeight:700,color:"#111827",marginBottom:3}}>Email Outreach</div>
+        <div style={{fontSize:12,color:"#6B7280"}}>Personalised acquisition pitch for {firm.name}.</div>
+        {insights && (
+          <div style={{marginTop:8,background:"#EEF2FF",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#4F46E5",fontWeight:600}}>
+            {(insights.outreach_hooks||[]).length} AI hooks loaded from website analysis
+          </div>
+        )}
+      </div>
+
+      <div style={{display:"flex",gap:8}}>
+        {aiReady && (
+          <button onClick={runAIEmail} disabled={loading}
+            style={{flex:1,padding:"10px 0",border:"none",borderRadius:9,cursor:loading?"not-allowed":"pointer",
+              background:loading?"#F3F4F6":"linear-gradient(135deg,#4F46E5,#7C3AED)",
+              color:loading?"#9CA3AF":"white",fontSize:13,fontWeight:800,
+              display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+            {loading?<><Spinner size={13}/> Writing…</>:"Draft AI Email"}
+          </button>
+        )}
+        <button onClick={()=>aiReady?findContactAndDraft():generateLocalDraft()} disabled={loading}
+          style={{flex:aiReady?0:1,padding:"10px 12px",border:"1px solid #E5E7EB",borderRadius:9,
+            cursor:loading?"not-allowed":"pointer",background:loading?"#F3F4F6":"white",
+            color:loading?"#9CA3AF":"#374151",fontSize:13,fontWeight:700,whiteSpace:"nowrap",
+            display:"flex",alignItems:"center",justifyContent:"center",gap:7}}>
+          {loading&&!aiReady?<><Spinner size={13}/> Loading…</>:aiReady?"Template":"Find Contact & Draft"}
+        </button>
+      </div>
+
+      {error && <div style={{background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#DC2626"}}>{error}</div>}
+
+      {contact && (
+        <div style={{background:"#F8FAFC",border:"1px solid #E5E7EB",borderRadius:10,padding:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>Contact Found</div>
+          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:contact.contact?.email?10:0}}>
+            <FirmAvatar name={contact.leader?.name||"?"} size={38}/>
+            <div>
+              <div style={{fontSize:14,fontWeight:700}}>{contact.leader?.name||"Name not found"}</div>
+              <div style={{fontSize:11,color:"#6B7280"}}>{contact.leader?.title||"Managing Partner"}</div>
+            </div>
+          </div>
+          {contact.contact?.email && (
+            <div style={{borderTop:"1px solid #E5E7EB",paddingTop:10}}>
+              <div style={{fontSize:10,color:"#9CA3AF",fontWeight:600,marginBottom:4}}>EMAIL</div>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <code style={{fontSize:12,fontWeight:600,color:"#111827",background:"white",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px"}}>{contact.contact.email}</code>
+                <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,
+                  background:contact.contact.confidence>=80?"#F0FDF4":"#FFFBEB",
+                  color:contact.contact.confidence>=80?"#16A34A":"#D97706"}}>
+                  {contact.contact.confidence||0}% confidence
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showDraft && draft && (
+        <div style={{border:"1px solid #E5E7EB",borderRadius:10,overflow:"hidden"}}>
+          <div style={{background:"#F8FAFC",padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid #E5E7EB"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:13,fontWeight:700}}>Email Draft</span>
+              {insights && <span style={{fontSize:10,fontWeight:700,background:"#EEF2FF",color:"#4F46E5",padding:"2px 7px",borderRadius:10}}>AI personalised</span>}
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>setEditMode(!editMode)} style={{fontSize:11,padding:"4px 10px",borderRadius:6,cursor:"pointer",border:"1px solid #E5E7EB",background:"white",color:"#374151",fontWeight:600}}>{editMode?"Preview":"Edit"}</button>
+              <button onClick={handleCopy} style={{fontSize:11,padding:"4px 12px",borderRadius:6,cursor:"pointer",border:"none",background:copied?"#16A34A":"#111827",color:"white",fontWeight:700}}>{copied?"Copied!":"Copy"}</button>
+            </div>
+          </div>
+          {editMode
+            ? <textarea value={draftText} onChange={e=>setDraftText(e.target.value)} style={{width:"100%",minHeight:280,padding:16,fontSize:12,lineHeight:1.7,border:"none",resize:"vertical",color:"#111827"}}/>
+            : <pre style={{margin:0,padding:16,fontSize:12,lineHeight:1.7,color:"#111827",whiteSpace:"pre-wrap",wordBreak:"break-word",maxHeight:320,overflowY:"auto",fontFamily:"inherit"}}>{draft}</pre>
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Firm Detail Panel ──────────────────────────────────────────────────────────
+function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
+  const [enriched,    setEnriched]    = useState(null);
+  const [loading,     setLoading]     = useState(false);
+  const [tab,         setTab]         = useState("overview");
+  const [pipelineId,  setPipelineId]  = useState(null);
+  // AI state — lifted here so Overview and Outreach both share it
+  const [insights,       setInsights]       = useState(null);
+  const [aiLoading,      setAiLoading]      = useState(false);
+  const [aiError,        setAiError]        = useState("");
+  const [aiReady,        setAiReady]        = useState(null);
+  const [foundWebsite,   setFoundWebsite]   = useState("");   // auto-discovered URL
+  const [websiteSearching,setWebsiteSearching] = useState(false);
+  const [manualWebsite,  setManualWebsite]  = useState("");   // user-entered override
+  // Investment score state
+  const [scoreData,      setScoreData]      = useState(null);
+  const [scoreLoading,   setScoreLoading]   = useState(false);
+  // Google Sheets link state
+  const [sheetLinked,   setSheetLinked]   = useState(false);
+  const [sheetLinking,  setSheetLinking]  = useState(false);
+
+  const isWatchlisted = watchlist.some(w => w.name===firm.name && w.city===firm.city);
+
+  // Check AI availability once
+  useEffect(() => {
+    fetch("/api/ai-status").then(r=>r.json()).then(d=>setAiReady(d.ready)).catch(()=>setAiReady(false));
+  }, []);
+
+  // Enrich firm data when selection changes, then auto-find website if missing
+  useEffect(()=>{
+    setEnriched(null); setLoading(true); setTab("overview");
+    setPipelineId(null); setInsights(null); setAiError("");
+    setFoundWebsite(""); setManualWebsite("");
+    setScoreData(null); setScoreLoading(false);
+    setSheetLinked(false); setSheetLinking(false);
+
+    fetch(`${API}/discover/enrich`,{
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({name:firm.name, website:firm.website||"", city:firm.city, state:firm.state, practice_area:firm.practice_areas?.[0]||"personal injury"})
+    }).then(r=>r.json()).then(d=>{
+      setEnriched(d);
+      setLoading(false);
+      // Auto-find website if neither the firm data nor enrichment has one
+      const hasUrl = !!(firm.website || d?.website);
+      if (!hasUrl) {
+        setWebsiteSearching(true);
+        fetch("/api/find-website", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({firm_name:firm.name, city:firm.city, state:firm.state})
+        }).then(r=>r.json()).then(wd=>{
+          if (wd.found && wd.website) setFoundWebsite(wd.website);
+        }).catch(()=>{}).finally(()=>setWebsiteSearching(false));
+      }
+    }).catch(()=>setLoading(false));
+  },[firm.name, firm.city]);
+
+  async function ensurePipeline() {
+    if (pipelineId) return pipelineId;
+    const resp = await fetch(`${API}/firms`,{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({name:firm.name,city:firm.city,state:firm.state,website:firm.website||"",attorney_count:0,notes:`Discovered via LEA · ${firm.source||""}`})});
+    const d = await resp.json();
+    if (d.id) { setPipelineId(d.id); return d.id; }
+    return null;
+  }
+
+  async function runAIAnalysis() {
+    setAiLoading(true); setAiError(""); setInsights(null);
+    try {
+      const resp = await fetch("/api/ai-analyze", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          firm_name: firm.name, city: firm.city, state: firm.state||"",
+          website: effectiveWebsite,
+          google_review_snippets:[],
+        }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail||"Analysis failed");
+      if (data.error && !data.community_focus) throw new Error(data.error);
+      setInsights(data);
+      // Auto-trigger investment score after AI analysis
+      scoreThisFirm(data);
+    } catch(e) { setAiError(e.message); }
+    finally    { setAiLoading(false); }
+  }
+
+  async function linkToSheet() {
+    setSheetLinking(true);
+    try {
+      const firmData = {...firm, ...(enriched||{}), founder_name: enriched?.leader?.name || firm.founder_name || ""};
+      const resp = await fetch("/api/link-to-sheet", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({firm: firmData, username: currentUser || "Unknown", channel: "Cold Call"})
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || "Failed");
+      setSheetLinked(true);
+    } catch(e) {
+      alert("Sheet link failed: " + e.message);
+    } finally {
+      setSheetLinking(false);
+    }
+  }
+
+  async function scoreThisFirm(insightsData) {
+    setScoreLoading(true);
+    try {
+      const resp = await fetch('/api/score-firm', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ firm: {...firm, ...enriched}, insights: insightsData }),
+      });
+      const data = await resp.json();
+      if (resp.ok) setScoreData(data);
+    } catch(e) { console.error('score error', e); }
+    finally { setScoreLoading(false); }
+  }
+
+  const effectiveWebsite = manualWebsite.trim() || firm.website || enriched?.website || foundWebsite || "";
+  const hasWebsite = !!effectiveWebsite;
+
+  const Row = ({label,value}) => value ? (
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",padding:"9px 0",borderBottom:"1px solid #F3F4F6"}}>
+      <span style={{fontSize:12,color:"#6B7280",flex:"0 0 148px"}}>{label}</span>
+      <span style={{fontSize:12,color:"#111827",fontWeight:500,textAlign:"right",flex:1}}>{value}</span>
+    </div>
+  ) : null;
+
+  return (
+    <div style={{height:"100%",display:"flex",flexDirection:"column",overflow:"hidden",animation:"slideRight 0.2s ease"}}>
+
+      {/* ── Header ── */}
+      <div style={{padding:"20px 24px 16px",background:"linear-gradient(135deg,#111827 0%,#1e3a5f 100%)",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:14}}>
+          <FirmAvatar name={firm.name} size={48} fontSize={20} bg="rgba(255,255,255,0.14)"/>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:17,fontWeight:800,color:"white",lineHeight:1.2}}>{firm.name}</div>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginTop:5,flexWrap:"wrap"}}>
+              <span style={{fontSize:12,color:"rgba(255,255,255,0.55)"}}>📍 {firm.city}, {firm.state}</span>
+              {firm.google_stars>0 && <span style={{fontSize:12,color:"rgba(255,255,255,0.75)",display:"inline-flex",alignItems:"center",gap:4}}><span style={{color:"#F59E0B",fontWeight:700}}>{firm.google_stars.toFixed(1)}</span><span style={{color:"rgba(255,255,255,0.45)"}}>({(firm.google_review_count||0).toLocaleString()} {firm.rating_source||"Google"} reviews)</span></span>}
+              {firm.active_cases>0 && <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:4,background:"rgba(16,185,129,0.2)",color:"#6EE7B7"}}>{firm.active_cases} cases</span>}
+            </div>
+          </div>
+        </div>
+        {/* Score badge row */}
+        {(scoreData || scoreLoading) && (
+          <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
+            {scoreLoading && !scoreData && (
+              <div style={{display:"flex",alignItems:"center",gap:7,background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"7px 12px",flex:1}}>
+                <Spinner size={11} color="#818CF8"/>
+                <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Calculating investment score…</span>
+              </div>
+            )}
+            {scoreData && (() => {
+              const s = scoreData.score || 0;
+              const g = scoreData.grade || "—";
+              const bg = s>=85?"#059669":s>=70?"#D97706":s>=55?"#EA580C":"#DC2626";
+              const action = scoreData.recommended_action||"Review";
+              const actionColor = action==="Invest Now"?"#6EE7B7":action==="Strong Consider"?"#86EFAC":action==="Monitor"?"#FCD34D":"#FCA5A5";
+              return (
+                <div style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.07)",borderRadius:10,padding:"10px 14px",flex:1,border:"1px solid rgba(255,255,255,0.1)"}}>
+                  <div style={{width:46,height:46,borderRadius:"50%",background:bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,border:"2px solid rgba(255,255,255,0.2)"}}>
+                    <div style={{fontSize:15,fontWeight:900,color:"white",lineHeight:1}}>{s}</div>
+                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em"}}>{g}</div>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>Investment Score</div>
+                    <div style={{fontSize:11,color:"rgba(255,255,255,0.88)",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{scoreData.investment_thesis||""}</div>
+                  </div>
+                  <span style={{fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:6,background:"rgba(0,0,0,0.25)",color:actionColor,flexShrink:0,textAlign:"center",lineHeight:1.3}}>{action}</span>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          <button onClick={linkToSheet} disabled={sheetLinking||sheetLinked}
+            style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:sheetLinked?"default":sheetLinking?"not-allowed":"pointer",
+              background:sheetLinked?"rgba(16,185,129,0.2)":sheetLinking?"rgba(255,255,255,0.08)":"rgba(52,211,153,0.15)",
+              color:sheetLinked?"#6EE7B7":sheetLinking?"rgba(255,255,255,0.35)":"#6EE7B7",
+              fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,border:"1px solid rgba(52,211,153,0.3)"}}>
+            {sheetLinking ? <><Spinner size={11} color="#6EE7B7"/>Linking…</> : sheetLinked ? "✓ Added to Sheet" : "📊 Link to Sheet"}
+          </button>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={()=>setTab("outreach")} style={{flex:1,padding:"8px 0",border:"none",borderRadius:8,background:"white",color:"#111827",fontSize:13,fontWeight:700,cursor:"pointer"}}>
+            ✉ Draft Email
+          </button>
+          <button onClick={()=>onToggleWatchlist(firm)} style={{flex:1,padding:"8px 0",border:`1.5px solid ${isWatchlisted?"rgba(74,222,128,0.5)":"rgba(255,255,255,0.25)"}`,borderRadius:8,background:isWatchlisted?"rgba(22,163,74,0.2)":"transparent",color:isWatchlisted?"#86EFAC":"rgba(255,255,255,0.85)",fontSize:13,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill={isWatchlisted?"#86EFAC":"none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+            {isWatchlisted?"Watchlisted":"Add to Watchlist"}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Tabs ── */}
+      <div style={{display:"flex",borderBottom:"1px solid #F3F4F6",background:"white",flexShrink:0}}>
+        {[["overview","Overview"],["datasources","Data Sources"],["outreach","Outreach"]].map(([t,label])=>(
+          <button key={t}
+            onClick={t==="datasources"?async()=>{setTab("datasources");if(!pipelineId)await ensurePipeline();}:()=>setTab(t)}
+            style={{padding:"11px 18px",border:"none",background:"none",cursor:"pointer",fontSize:13,
+              fontWeight:tab===t?700:500,color:tab===t?"#111827":"#6B7280",
+              borderBottom:tab===t?"2px solid #111827":"2px solid transparent",marginBottom:-1}}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Content ── */}
+      <div style={{flex:1,overflowY:"auto",background:"white"}}>
+
+        {/* OVERVIEW TAB */}
+        {tab==="overview" && (
+          <div>
+            {loading && (
+              <div style={{padding:"40px 24px",textAlign:"center",display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
+                <Spinner/><div style={{fontSize:13,color:"#6B7280"}}>Researching {firm.name}…</div>
+              </div>
+            )}
+            {!loading && (
+              <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
+
+                {/* ── INVESTMENT SCORE BLOCK ── */}
+                {scoreData && (() => {
+                  const s = scoreData.score||0;
+                  const g = scoreData.grade||"—";
+                  const bg = s>=85?"#059669":s>=70?"#D97706":s>=55?"#EA580C":"#DC2626";
+                  const subs = scoreData.sub_scores||{};
+                  const subLabels = {client_volume:"Client Volume",reputation:"Reputation",scale:"Scale",market_activity:"Market Activity",acquisition_readiness:"Acq. Readiness"};
+                  return (
+                    <div style={{background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:12,padding:"16px 18px",border:"1px solid rgba(255,255,255,0.08)"}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                        <div style={{width:52,height:52,borderRadius:"50%",background:bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,border:"2px solid rgba(255,255,255,0.15)",boxShadow:"0 0 0 4px "+bg+"33"}}>
+                          <div style={{fontSize:18,fontWeight:900,color:"white",lineHeight:1}}>{s}</div>
+                          <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.8)"}}>{g}</div>
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:13,fontWeight:800,color:"white"}}>Investment Score</div>
+                          {scoreData.recommended_action && (() => {
+                            const a = scoreData.recommended_action;
+                            const ac = a==="Invest Now"?"#6EE7B7":a==="Strong Consider"?"#86EFAC":a==="Monitor"?"#FCD34D":"#FCA5A5";
+                            return <span style={{fontSize:10,fontWeight:700,color:ac,background:"rgba(0,0,0,0.3)",borderRadius:5,padding:"2px 8px",marginTop:3,display:"inline-block"}}>{a}</span>;
+                          })()}
+                        </div>
+                        <button onClick={()=>scoreThisFirm(insights)} disabled={scoreLoading}
+                          style={{fontSize:10,fontWeight:700,padding:"5px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>
+                          {scoreLoading?"…":"↻ Re-score"}
+                        </button>
+                      </div>
+
+                      {scoreData.investment_thesis && (
+                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",marginBottom:10,borderLeft:"3px solid "+bg}}>
+                          <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>Investment Thesis</div>
+                          <div style={{fontSize:12,color:"rgba(255,255,255,0.88)",lineHeight:1.55}}>{scoreData.investment_thesis}</div>
+                        </div>
+                      )}
+
+                      {Object.keys(subs).filter(k=>k!=="lea_bonus").length>0 && (
+                        <div style={{marginBottom:10}}>
+                          <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Sub-Scores</div>
+                          <div style={{display:"flex",flexDirection:"column",gap:5}}>
+                            {Object.entries(subs).filter(([k])=>k!=="lea_bonus"&&subLabels[k]).map(([k,v])=>(
+                              <div key={k}>
+                                <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
+                                  <span style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>{subLabels[k]||k}</span>
+                                  <span style={{fontSize:10,fontWeight:700,color:v>=70?"#6EE7B7":v>=50?"#FCD34D":"#FCA5A5"}}>{v}</span>
+                                </div>
+                                <div style={{height:4,background:"rgba(255,255,255,0.1)",borderRadius:3}}>
+                                  <div style={{height:4,borderRadius:3,width:(Math.min(100,v))+"%",background:v>=70?"#059669":v>=50?"#D97706":"#DC2626",transition:"width 0.5s ease"}}/>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{display:"flex",gap:8}}>
+                        {scoreData.key_strengths?.length>0 && (
+                          <div style={{flex:1,background:"rgba(16,185,129,0.08)",borderRadius:7,padding:"8px 10px"}}>
+                            <div style={{fontSize:9,fontWeight:800,color:"#6EE7B7",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Strengths</div>
+                            {scoreData.key_strengths.map((s,i)=>(
+                              <div key={i} style={{fontSize:10,color:"rgba(255,255,255,0.75)",marginBottom:2,display:"flex",gap:5}}>
+                                <span style={{color:"#6EE7B7",flexShrink:0}}>+</span>{s}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {scoreData.key_risks?.length>0 && (
+                          <div style={{flex:1,background:"rgba(239,68,68,0.08)",borderRadius:7,padding:"8px 10px"}}>
+                            <div style={{fontSize:9,fontWeight:800,color:"#FCA5A5",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Risks</div>
+                            {scoreData.key_risks.map((r,i)=>(
+                              <div key={i} style={{fontSize:10,color:"rgba(255,255,255,0.75)",marginBottom:2,display:"flex",gap:5}}>
+                                <span style={{color:"#FCA5A5",flexShrink:0}}>−</span>{r}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {!scoreData && !scoreLoading && insights && (
+                  <div style={{display:"flex",justifyContent:"center"}}>
+                    <button onClick={()=>scoreThisFirm(insights)} style={{padding:"7px 18px",borderRadius:8,border:"1px solid #E5E7EB",background:"white",color:"#374151",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
+                      🏆 Generate Investment Score
+                    </button>
+                  </div>
+                )}
+
+                {/* ── AI INSIGHTS BLOCK — primary feature ── */}
+                <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81)",borderRadius:12,padding:"16px 18px"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#818CF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:800,color:"white"}}>AI Firm Intelligence</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:1}}>
+                        {aiReady===false
+                          ? "Add GROQ_API_KEY to .env to enable"
+                          : !hasWebsite
+                            ? "No website found — insights unavailable"
+                            : websiteSearching
+                            ? "Searching for website…"
+                            : insights
+                              ? `${insights.pages_fetched||0} pages analysed · ${(insights.confidence||"low").toUpperCase()} confidence`
+                              : foundWebsite
+                                ? `Website found: ${foundWebsite}`
+                                : "Reads the firm's website to find personalisation hooks for your outreach"}
+                      </div>
+                    </div>
+                    {insights && (
+                      <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,
+                        background:insights.confidence==="high"?"rgba(16,185,129,0.25)":insights.confidence==="medium"?"rgba(251,191,36,0.25)":"rgba(107,114,128,0.2)",
+                        color:insights.confidence==="high"?"#6EE7B7":insights.confidence==="medium"?"#FCD34D":"#9CA3AF"}}>
+                        {(insights.confidence||"low").toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+
+                  {aiError && (
+                    <div style={{background:"rgba(220,38,38,0.15)",border:"1px solid rgba(220,38,38,0.3)",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#FCA5A5",marginBottom:10}}>
+                      ⚠ {aiError}
+                    </div>
+                  )}
+
+                  {/* Insights cards */}
+                  {insights && (
+                    <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
+
+                      {insights.website_language && insights.website_language!=="English" && (
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,background:"rgba(99,102,241,0.3)",color:"#A5B4FC"}}>
+                            🌐 {insights.website_language}
+                          </span>
+                        </div>
+                      )}
+
+                      {insights.community_focus && (
+                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #818CF8"}}>
+                          <div style={{fontSize:9,fontWeight:800,color:"#818CF8",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Community Focus</div>
+                          <div style={{fontSize:12,color:"rgba(255,255,255,0.88)",lineHeight:1.5}}>{insights.community_focus}</div>
+                        </div>
+                      )}
+
+                      {insights.unique_differentiators?.length>0 && (
+                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #34D399"}}>
+                          <div style={{fontSize:9,fontWeight:800,color:"#34D399",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>What Makes Them Unique</div>
+                          {insights.unique_differentiators.map((d,i)=>(
+                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.82)",marginBottom:3,display:"flex",gap:6}}>
+                              <span style={{color:"#34D399",flexShrink:0}}>•</span>{d}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {insights.notable_results?.length>0 && (
+                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #FBBF24"}}>
+                          <div style={{fontSize:9,fontWeight:800,color:"#FBBF24",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>Notable Results</div>
+                          {insights.notable_results.map((r,i)=>(
+                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.82)",marginBottom:3,display:"flex",gap:6}}>
+                              <span style={{color:"#FBBF24",flexShrink:0}}>★</span>{r}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {insights.acquisition_signals?.length>0 && (
+                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #F87171"}}>
+                          <div style={{fontSize:9,fontWeight:800,color:"#F87171",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>Acquisition Signals</div>
+                          {insights.acquisition_signals.map((s,i)=>(
+                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.82)",marginBottom:3,display:"flex",gap:6}}>
+                              <span style={{color:"#F87171",flexShrink:0}}>⚡</span>{s}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {insights.outreach_hooks?.length>0 && (
+                        <div style={{background:"rgba(99,102,241,0.15)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(99,102,241,0.3)"}}>
+                          <div style={{fontSize:9,fontWeight:800,color:"#A5B4FC",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>Outreach Hooks</div>
+                          {insights.outreach_hooks.map((h,i)=>(
+                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.88)",marginBottom:5,lineHeight:1.5,display:"flex",gap:6}}>
+                              <span style={{color:"#818CF8",flexShrink:0,fontWeight:800}}>{i+1}.</span>{h}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {insights.attorney_count_website>0 && (
+                        <div style={{background:"rgba(16,185,129,0.1)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(16,185,129,0.25)"}}>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                            <div style={{fontSize:9,fontWeight:800,color:"#6EE7B7",letterSpacing:"0.08em",textTransform:"uppercase"}}>
+                              Attorney Roster — {insights.attorney_count_website} found on website
+                            </div>
+                            {insights.attorney_page_url && (
+                              <a href={insights.attorney_page_url} target="_blank" rel="noopener"
+                                style={{fontSize:9,fontWeight:700,color:"#6EE7B7",textDecoration:"none",opacity:0.8}}>
+                                VIEW PAGE ↗
+                              </a>
+                            )}
+                          </div>
+                          <div style={{display:"flex",flexWrap:"wrap",gap:"4px 8px"}}>
+                            {(insights.attorney_names||[]).slice(0,20).map((name,i)=>(
+                              <span key={i} style={{fontSize:10,color:"rgba(255,255,255,0.75)",background:"rgba(255,255,255,0.07)",borderRadius:4,padding:"2px 6px"}}>
+                                {name}
+                              </span>
+                            ))}
+                            {(insights.attorney_names||[]).length>20 && (
+                              <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",padding:"2px 6px"}}>
+                                +{insights.attorney_names.length-20} more
+                              </span>
+                            )}
+                          </div>
+                          <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",marginTop:5}}>
+                            via {insights.attorney_count_method||"website scrape"}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Website URL input — always visible so user can correct auto-found URL */}
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>
+                      Website URL {effectiveWebsite && !manualWebsite.trim() ? <span style={{color:"rgba(255,255,255,0.25)",fontWeight:400,textTransform:"none"}}>— auto-detected</span> : ""}
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      <input
+                        type="text"
+                        value={manualWebsite || (insights ? "" : effectiveWebsite)}
+                        onChange={e=>{ setManualWebsite(e.target.value); setInsights(null); setAiError(""); }}
+                        onKeyDown={e=>{ if(e.key==="Enter" && (manualWebsite.trim()||effectiveWebsite)) runAIAnalysis(); }}
+                        placeholder={effectiveWebsite || "https://firmwebsite.com"}
+                        style={{
+                          flex:1, padding:"8px 11px", borderRadius:7,
+                          border:"1px solid rgba(255,255,255,0.15)",
+                          background:"rgba(255,255,255,0.08)",
+                          color:"white", fontSize:12, outline:"none",
+                          fontFamily:"inherit",
+                        }}
+                      />
+                      {(manualWebsite.trim()) && (
+                        <button onClick={()=>{ setManualWebsite(""); setInsights(null); setAiError(""); }}
+                          style={{padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.4)",fontSize:12,cursor:"pointer"}}>
+                          ×
+                        </button>
+                      )}
+                    </div>
+                    {manualWebsite.trim() && (
+                      <div style={{fontSize:10,color:"rgba(99,102,241,0.9)",marginTop:4}}>Using your URL — auto-detection overridden</div>
+                    )}
+                  </div>
+
+                  <button onClick={runAIAnalysis}
+                    disabled={aiLoading||aiReady===false||!hasWebsite}
+                    style={{width:"100%",padding:"9px 0",borderRadius:8,border:"none",
+                      background: insights
+                        ? "rgba(255,255,255,0.1)"
+                        : aiLoading||aiReady===false||!hasWebsite
+                          ? "rgba(255,255,255,0.08)"
+                          : "rgba(255,255,255,0.92)",
+                      color: insights
+                        ? "rgba(255,255,255,0.5)"
+                        : aiLoading||aiReady===false||!hasWebsite
+                          ? "rgba(255,255,255,0.25)"
+                          : "#1e1b4b",
+                      fontSize:12, fontWeight:800, cursor: aiLoading||aiReady===false||!hasWebsite?"not-allowed":"pointer",
+                      display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                    {aiLoading ? <><Spinner size={12} color="#818CF8"/> Analysing…</> : insights ? "↻ Re-analyse" : "Analyse Firm Website"}
+                  </button>
+                </div>
+
+                {/* ── Leader card ── */}
+                {(enriched?.leader?.name||firm.founder_name) && (
+                  <div style={{background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:10,padding:"14px 16px"}}>
+                    <div style={{fontSize:10,color:"#92400E",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:4}}>Managing Partner / Founder</div>
+                    <div style={{fontSize:18,fontWeight:800,color:"#111827"}}>{enriched?.leader?.name||firm.founder_name}</div>
+                    {enriched?.leader?.email && (
+                      <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                        <code style={{fontSize:12,fontWeight:600,color:"#111827",background:"white",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 10px"}}>{enriched.leader.email}</code>
+                        <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:enriched.leader.email_confidence>=80?"#F0FDF4":"#FFFBEB",color:enriched.leader.email_confidence>=80?"#16A34A":"#D97706"}}>{enriched.leader.email_confidence}%</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── Court activity ── */}
+                {firm.active_cases>0 && (
+                  <div style={{background:"#EFF6FF",border:"1px solid #BFDBFE",borderRadius:10,padding:"14px 16px"}}>
+                    <div style={{fontSize:10,color:"#1D4ED8",fontWeight:700,letterSpacing:"0.05em",textTransform:"uppercase",marginBottom:10}}>Court Activity (CourtListener)</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                      {[{label:"Attorneys on Docket",value:firm.attorney_count_court},{label:"Cases (period)",value:firm.active_cases},{label:"Cases / Month",value:firm.cases_per_month}].map(m=>(
+                        <div key={m.label} style={{background:"white",borderRadius:8,padding:"10px 12px",border:"1px solid #DBEAFE"}}>
+                          <div style={{fontSize:10,color:"#6B7280",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.04em",marginBottom:4}}>{m.label}</div>
+                          <div style={{fontSize:18,fontWeight:800,color:"#1D4ED8"}}>{m.value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── LEA Research notes banner ── */}
+                {firm.lea_notes && (
+                  <div style={{background:"#111827",borderRadius:10,padding:"11px 14px",marginBottom:10,display:"flex",gap:10,alignItems:"flex-start"}}>
+                    <div style={{flexShrink:0,background:"white",color:"#111827",borderRadius:4,fontSize:9,fontWeight:900,padding:"2px 6px",marginTop:1,letterSpacing:"0.04em"}}>LEA</div>
+                    <div>
+                      <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:3}}>Internal Research Notes</div>
+                      <div style={{fontSize:12,color:"rgba(255,255,255,0.88)",lineHeight:1.55}}>{firm.lea_notes}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Key metrics grid ── */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  {[
+                    {label:"Est. Annual Revenue",  value:enriched?.revenue_label||firm.revenue_label||"–", accent:true},
+                    {label:"Attorneys", value:null, custom:"attorneys"},
+                    {label:"LinkedIn Headcount",   value:null, custom:"linkedin"},
+                    {label:"Federal Cases",        value:enriched?.case_count_90d?`${enriched.case_count_90d} in 90d`:"–"},
+                  ].map(m=>{
+                    if(m.custom==="attorneys") {
+                      // Priority: website scrape from AI > enriched web count > estimate
+                      const webCount    = insights?.attorney_count_website;
+                      const enrichCount = enriched?.attorney_count_web;
+                      const estCount    = enriched?.attorney_count_est;
+                      const pageUrl     = insights?.attorney_page_url;
+                      const names       = insights?.attorney_names || [];
+                      const method      = insights?.attorney_count_method || "";
+                      const isFromWeb   = webCount > 0;
+                      const displayCount = webCount || enrichCount || estCount;
+                      const label2      = isFromWeb ? "from website" : enrichCount ? "website" : estCount ? "est." : null;
+                      return (
+                        <div key={m.label} style={{background:"#F8FAFC",borderRadius:10,padding:"12px 14px"}}>
+                          <div style={{fontSize:10,color:"#9CA3AF",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                            <span>{m.label}</span>
+                            {pageUrl && <a href={pageUrl} target="_blank" rel="noopener" style={{color:"#7C3AED",fontSize:9,fontWeight:700,textDecoration:"none",letterSpacing:"0.03em"}}>ROSTER ↗</a>}
+                          </div>
+                          {displayCount ? (
+                            <div>
+                              <div style={{fontSize:14,fontWeight:700,color:isFromWeb?"#059669":"#111827",display:"flex",alignItems:"baseline",gap:5}}>
+                                {displayCount}
+                                {label2 && <span style={{fontSize:10,fontWeight:600,color:isFromWeb?"#059669":"#9CA3AF"}}>({label2})</span>}
+                              </div>
+                              {isFromWeb && names.length>0 && (
+                                <div style={{fontSize:10,color:"#6B7280",marginTop:3,lineHeight:1.4}}>
+                                  {names.slice(0,3).join(", ")}{names.length>3?` +${names.length-3} more`:""}
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div style={{fontSize:14,fontWeight:600,color:"#D1D5DB"}}>–</div>
+                          )}
+                        </div>
+                      );
+                    }
+                    if(m.custom==="linkedin") {
+                      const range = enriched?.linkedin_headcount_range || (enriched?.linkedin_headcount ? `${enriched.linkedin_headcount} employees` : null);
+                      const followers = enriched?.linkedin_followers_label || (enriched?.linkedin_followers ? `${enriched.linkedin_followers.toLocaleString()}` : null);
+                      const profileUrl = enriched?.linkedin_profile_url;
+                      return (
+                        <div key={m.label} style={{background:"#F8FAFC",borderRadius:10,padding:"12px 14px"}}>
+                          <div style={{fontSize:10,color:"#9CA3AF",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                            <span>{m.label}</span>
+                            {profileUrl && <a href={profileUrl} target="_blank" rel="noopener" style={{color:"#0A66C2",fontSize:9,fontWeight:700,textDecoration:"none",letterSpacing:"0.03em"}}>VIEW ↗</a>}
+                          </div>
+                          {range || followers ? (
+                            <div>
+                              {range && <div style={{fontSize:14,fontWeight:600,color:"#111827"}}>{range}</div>}
+                              {followers && <div style={{fontSize:11,color:"#6B7280",marginTop:2}}>{followers} followers</div>}
+                            </div>
+                          ) : (
+                            <div style={{fontSize:14,fontWeight:600,color:"#111827"}}>–</div>
+                          )}
+                        </div>
+                      );
+                    }
+                    return (
+                    <div key={m.label} style={{background:"#F8FAFC",borderRadius:10,padding:"12px 14px"}}>
+                      <div style={{fontSize:10,color:"#9CA3AF",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:4}}>{m.label}</div>
+                      <div style={{fontSize:14,fontWeight:m.accent?800:600,color:"#111827"}}>{m.value}</div>
+                    </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── Firm details table ── */}
+                <div style={{background:"white",border:"1px solid #E5E7EB",borderRadius:10,overflow:"hidden"}}>
+                  <div style={{padding:"9px 16px",background:"#F8FAFC",borderBottom:"1px solid #E5E7EB",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em"}}>Firm Details</div>
+                  <div style={{padding:"0 16px"}}>
+                    <Row label="Cities / Offices" value={enriched?.office_locations?.length>0?enriched.office_locations.join(", "):`${firm.city}, ${firm.state}`}/>
+                    <Row label="Practice Areas"   value={(enriched?.practice_areas_detected?.length>0?enriched.practice_areas_detected:firm.practice_areas||[]).map(p=>p.charAt(0).toUpperCase()+p.slice(1)).join(", ")||"–"}/>
+                    <Row label="Phone"            value={firm.phone||"–"}/>
+                    <Row label="CRM Detected"     value={enriched?.crm_detected||"–"}/>
+                    <Row label="Website"          value={firm.website||enriched?.website||"–"}/>
+                    {firm.google_stars>0 && <Row label={`${firm.rating_source||"Google"} Rating`} value={`${firm.google_stars.toFixed(1)} ★ (${(firm.google_review_count||0).toLocaleString()} reviews)`}/>}
+                    {firm.lea_rank>0 && <Row label="LEA Market Rank" value={`#${firm.lea_rank} in ${firm.lea_market||firm.city}`}/>}
+                  </div>
+                </div>
+
+              </div>
+            )}
+          </div>
+        )}
+
+        {tab==="datasources" && <DataSourcesPanel firmId={pipelineId}/>}
+        {tab==="outreach"    && <OutreachPanel firm={{...firm,pipeline_id:pipelineId,website:effectiveWebsite}} enriched={enriched} insights={insights}/>}
+      </div>
+    </div>
+  );
+}
+
+// ── Header ─────────────────────────────────────────────────────────────────────
+function Header({ tab, setTab, watchlistCount, currentUser, onSwitchUser }) {
+  const tabs = [
+    { id:"discover",  label:"Discover",  icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> },
+    { id:"watchlist", label:`Watchlist${watchlistCount>0?` (${watchlistCount})`:""}`, icon:<svg width="14" height="14" viewBox="0 0 24 24" fill={tab==="watchlist"&&watchlistCount>0?"#111827":"none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg> },
+    { id:"manage",    label:"Manage",    icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg> },
+    { id:"heatmap",   label:"Heat Map",   icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="8"/><line x1="12" y1="16" x2="12" y2="22"/><line x1="2" y1="12" x2="8" y2="12"/><line x1="16" y1="12" x2="22" y2="12"/></svg> },
+  ];
+  return (
+    <div style={{height:54,flexShrink:0,display:"flex",alignItems:"center",padding:"0 24px",background:"white",borderBottom:"1px solid #E5E7EB",gap:24,zIndex:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:9,marginRight:12}}>
+        <div style={{width:30,height:30,borderRadius:8,background:"#111827",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+        </div>
+        <span style={{fontSize:15,fontWeight:800,color:"#111827",letterSpacing:"-0.02em"}}>LEA</span>
+      </div>
+      <div style={{display:"flex",gap:2}}>
+        {tabs.map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{display:"flex",alignItems:"center",gap:7,padding:"6px 14px",borderRadius:8,border:"none",background:tab===t.id?"#111827":"transparent",color:tab===t.id?"white":"#6B7280",fontSize:13,fontWeight:tab===t.id?700:500,cursor:"pointer",transition:"all 0.15s"}}>
+            {t.icon}{t.label}
+          </button>
+        ))}
+      </div>
+      <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:8}}>
+        {currentUser && (
+          <div style={{display:"flex",alignItems:"center",gap:7,padding:"4px 10px 4px 4px",borderRadius:20,background:"#F3F4F6",border:"1px solid #E5E7EB"}}>
+            <div style={{width:24,height:24,borderRadius:"50%",background:"#111827",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,color:"white"}}>{currentUser.charAt(0).toUpperCase()}</div>
+            <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{currentUser.split(" ")[0]}</span>
+            <button onClick={onSwitchUser} style={{background:"none",border:"none",cursor:"pointer",color:"#9CA3AF",fontSize:10,padding:"0 2px",fontWeight:700}} title="Switch user">✕</button>
+          </div>
+        )}
+        <div style={{fontSize:11,color:"#D97706",background:"#FFFBEB",border:"1px solid #FDE68A",borderRadius:6,padding:"3px 10px",fontWeight:600}}>
+          ⚠ Add OUTSCRAPER_API_KEY for real Google ratings (free at outscraper.com)
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Discover Page ──────────────────────────────────────────────────────────────
+function DiscoverPage({ watchlist, onToggleWatchlist, currentUser,
+  mode, setMode, form, setForm, cForm, setCForm,
+  results, setResults, analytics, setAnalytics,
+  selected, setSelected, error, setError }) {
+  // loading + sort stay local — no need to persist these
+  const [loading,       setLoading]       = useState(false);
+  const [sortCol,       setSortCol]       = useState("active_cases");
+  const [sortAsc,       setSortAsc]       = useState(false);
+  const [ratingsStatus, setRatingsStatus] = useState(null);
+  const [discoverSort,  setDiscoverSort]  = useState("reviews");
+  const [discoverPage,  setDiscoverPage]  = useState(0);
+
+  React.useEffect(()=>{
+    fetch("/api/ratings-status").then(r=>r.json()).then(setRatingsStatus).catch(()=>{});
+  }, []);
+
+  async function doSearch(e) {
+    e.preventDefault(); if(!form.city.trim()) return;
+    setLoading(true); setError(""); setSelected(null); setDiscoverPage(0);
+    try {
+      const resp = await fetch(`${API}/discover`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...form,max_results:parseInt(form.max_results)})});
+      if(!resp.ok) throw new Error(`Server error ${resp.status}`);
+      setResults(await resp.json());
+    } catch(e){ setError(e.message||"Discovery failed — is the backend running?"); }
+    finally { setLoading(false); }
+  }
+
+  async function doCourt(e) {
+    e.preventDefault(); if(!cForm.city.trim()) return;
+    setLoading(true); setError(""); setSelected(null);
+    try {
+      const resp = await fetch(`${API}/court-analytics`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({...cForm,days_back:parseInt(cForm.days_back)})});
+      if(!resp.ok) throw new Error(`Server error ${resp.status}`);
+      setAnalytics(await resp.json());
+    } catch(e){ setError(e.message||"Court analytics failed"); }
+    finally { setLoading(false); }
+  }
+
+  function toggleSort(col) {
+    if(sortCol===col) setSortAsc(a=>!a);
+    else { setSortCol(col); setSortAsc(false); }
+  }
+
+  const inp = s=>({padding:"8px 12px",borderRadius:8,border:"1px solid rgba(255,255,255,0.22)",background:"rgba(255,255,255,0.11)",color:"white",fontSize:13,width:"100%",outline:"none",...s});
+
+  const firmList = results?.results || [];
+  const ratedFirms = firmList.filter(f => f.google_stars>0);
+  const baseList = ratedFirms.length>0 ? ratedFirms : firmList;
+
+  const PAGE_SIZE = 20;
+
+  const SORT_OPTIONS = [
+    { value:"reviews",  label:"Most Reviews"   },
+    { value:"rating",   label:"Highest Rated"  },
+    { value:"attorneys",label:"Most Attorneys" },
+    { value:"cases",    label:"Active Cases"   },
+    { value:"az",       label:"A → Z"          },
+  ];
+  const displayFirms = [...baseList].sort((a, b) => {
+    if (discoverSort === "reviews")   return (b.google_review_count||0) - (a.google_review_count||0);
+    if (discoverSort === "rating")    return (b.google_stars||0) - (a.google_stars||0);
+    if (discoverSort === "attorneys") return (b.attorney_count||b.attorney_count_web||b.attorney_count_est||0) - (a.attorney_count||a.attorney_count_web||a.attorney_count_est||0);
+    if (discoverSort === "cases")     return (b.active_cases||0) - (a.active_cases||0);
+    if (discoverSort === "az")        return a.name.localeCompare(b.name);
+    return 0;
+  });
+  const totalPages    = Math.ceil(displayFirms.length / PAGE_SIZE);
+  const paginatedFirms = displayFirms.slice(discoverPage * PAGE_SIZE, (discoverPage + 1) * PAGE_SIZE);
+
+  const courtFirms = analytics?.results ? [...analytics.results].sort((a,b)=>{
+    const av=a[sortCol]??0, bv=b[sortCol]??0;
+    return sortAsc ? (av>bv?1:-1) : (av<bv?1:-1);
+  }) : [];
+
+  const Th = ({col,children}) => (
+    <th className="sortable" onClick={()=>toggleSort(col)} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap",background:"#F8FAFC",borderBottom:"1px solid #E5E7EB"}}>
+      {children}{sortCol===col?<span style={{marginLeft:4,color:"#111827"}}>{sortAsc?"↑":"↓"}</span>:null}
+    </th>
+  );
+
+  return (
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      {/* Search bar */}
+      <div style={{background:"linear-gradient(135deg,#111827,#1e3a5f)",padding:"10px 24px 10px",flexShrink:0}}>
+
+        <div style={{display:"flex",gap:5,marginBottom:10}}>
+          {[["search","Firm Discovery"],["court","Court Analytics"]].map(([m,lbl])=>(
+            <button key={m} onClick={()=>{setMode(m);setSelected(null);}} style={{padding:"4px 11px",borderRadius:6,border:"none",cursor:"pointer",background:mode===m?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.1)",color:mode===m?"#111827":"rgba(255,255,255,0.65)",fontSize:11,fontWeight:mode===m?700:400,transition:"all 0.12s"}}>
+              {lbl}
+            </button>
+          ))}
+        </div>
+        {mode==="search" && (
+          <form onSubmit={doSearch}>
+            <div style={{display:"grid",gridTemplateColumns:"1.5fr 80px 1.2fr 90px 110px",gap:10,alignItems:"flex-end"}}>
+              {[["City *","city","text","e.g. New York..."],["State","state","select"],["Practice Area","practice_area","select"],["Max","max_results","select"]].map(([lbl,key,type,ph])=>(
+                <div key={key}>
+                  <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.07em",display:"block",marginBottom:5}}>{lbl}</label>
+                  {type==="text"
+                    ? <input required placeholder={ph} value={form[key]} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))} style={inp({})}/>
+                    : <select value={form[key]} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))} style={inp({cursor:"pointer"})}>
+                        {key==="state"&&US_STATES.map(s=><option key={s} value={s} style={{background:"#111827"}}>{s}</option>)}
+                        {key==="practice_area"&&PRACTICE_OPTIONS.map(p=><option key={p} value={p} style={{background:"#111827"}}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>)}
+                        {key==="max_results"&&[[20,"20 firms"],[40,"40 firms"],[60,"60 firms"]].map(([n,l])=><option key={n} value={n} style={{background:"#111827"}}>{l}</option>)}
+                      </select>
+                  }
+                </div>
+              ))}
+              <div>
+                <label style={{fontSize:10,color:"transparent",display:"block",marginBottom:5}}>_</label>
+                <button type="submit" disabled={loading} style={{width:"100%",padding:"8px 0",borderRadius:8,border:"none",background:loading?"rgba(255,255,255,0.15)":"white",color:loading?"rgba(255,255,255,0.4)":"#111827",fontSize:13,fontWeight:800,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  {loading?<><Spinner size={11} color="#374151"/> ...</>:"Search"}
+                </button>
+              </div>
+            </div>
+            <div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.4)",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+              <span>Searches Google Maps, DuckDuckGo and State Bar directories · shows rated firms first</span>
+              {ratingsStatus && (
+                ratingsStatus.is_google
+                  ? <span style={{background:"rgba(34,197,94,0.18)",color:"#86efac",borderRadius:5,padding:"2px 7px",fontWeight:700,fontSize:10,letterSpacing:"0.05em"}}>
+                      ★ {ratingsStatus.label}
+                    </span>
+                  : <a href="https://outscraper.com" target="_blank" rel="noopener"
+                       style={{background:"rgba(251,191,36,0.18)",color:"#fcd34d",borderRadius:5,padding:"2px 7px",fontWeight:700,fontSize:10,letterSpacing:"0.05em",textDecoration:"none",cursor:"pointer"}}
+                       title={ratingsStatus.warning||"Get Google ratings"}>
+                      ⚠ {ratingsStatus.label||"No ratings"} — get Google ratings free →
+                    </a>
+              )}
+            </div>
+          </form>
+        )}
+        {mode==="court" && (
+          <form onSubmit={doCourt}>
+            <div style={{display:"grid",gridTemplateColumns:"1.5fr 80px 1.2fr 110px 110px",gap:10,alignItems:"flex-end"}}>
+              {[["City *","city","text","e.g. Miami..."],["State","state","select"],["Practice Area","practice_area","select"],["Period","days_back","select"]].map(([lbl,key,type,ph])=>(
+                <div key={key}>
+                  <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.07em",display:"block",marginBottom:5}}>{lbl}</label>
+                  {type==="text"
+                    ? <input required placeholder={ph} value={cForm[key]} onChange={e=>setCForm(p=>({...p,[key]:e.target.value}))} style={inp({})}/>
+                    : <select value={cForm[key]} onChange={e=>setCForm(p=>({...p,[key]:e.target.value}))} style={inp({cursor:"pointer"})}>
+                        {key==="state"&&US_STATES.map(s=><option key={s} value={s} style={{background:"#111827"}}>{s}</option>)}
+                        {key==="practice_area"&&PRACTICE_OPTIONS.map(p=><option key={p} value={p} style={{background:"#111827"}}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>)}
+                        {key==="days_back"&&[[90,"90 days"],[180,"180 days"],[365,"1 year"]].map(([v,l])=><option key={v} value={v} style={{background:"#111827"}}>{l}</option>)}
+                      </select>
+                  }
+                </div>
+              ))}
+              <div>
+                <label style={{fontSize:10,color:"transparent",display:"block",marginBottom:5}}>_</label>
+                <button type="submit" disabled={loading} style={{width:"100%",padding:"8px 0",borderRadius:8,border:"none",background:loading?"rgba(255,255,255,0.15)":"#3B82F6",color:loading?"rgba(255,255,255,0.4)":"white",fontSize:13,fontWeight:800,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                  {loading?<><Spinner size={11} color="white"/> ...</>:"Run"}
+                </button>
+              </div>
+            </div>
+            <div style={{marginTop:10,fontSize:11,color:"rgba(255,255,255,0.4)"}}>
+              Counts attorneys per firm and sums active cases from CourtListener federal dockets
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* Main content area */}
+      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+        {/* Results pane */}
+        <div style={{width:selected?380:undefined,flex:selected?undefined:1,borderRight:selected?"1px solid #E5E7EB":"none",display:"flex",flexDirection:"column",overflow:"hidden",transition:"width 0.2s"}}>
+          {error && <div style={{padding:"14px 20px",color:"#DC2626",fontSize:13,background:"#FEF2F2",borderBottom:"1px solid #FECACA"}}>{error}</div>}
+          {loading && <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:14}}><Spinner size={36}/><div style={{fontSize:14,color:"#6B7280"}}>Searching...</div></div>}
+
+          {/* Firm Discovery results */}
+          {!loading && mode==="search" && results && (
+            <div style={{flex:1,overflowY:"auto"}}>
+              <div style={{padding:"8px 14px",fontSize:12,color:"#6B7280",background:"#FAFAFA",borderBottom:"1px solid #F3F4F6",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{fontWeight:700,color:"#111827"}}>{displayFirms.length}</span>
+                <span>firms · {results.practice_area} · {results.city}, {results.state}</span>
+                {totalPages>1 && <span style={{color:"#9CA3AF"}}>· page {discoverPage+1} of {totalPages}</span>}
+                <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+                  <span style={{fontSize:11,color:"#9CA3AF"}}>Sort:</span>
+                  <select value={discoverSort} onChange={e=>{setDiscoverSort(e.target.value);setDiscoverPage(0);}}
+                    style={{fontSize:11,fontWeight:600,color:"#111827",background:"white",border:"1px solid #E5E7EB",borderRadius:6,padding:"3px 22px 3px 8px",cursor:"pointer",outline:"none",appearance:"auto"}}>
+                    {SORT_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              {displayFirms.length===0 && <div style={{padding:"48px 24px",textAlign:"center",color:"#9CA3AF",fontSize:13}}>No firms found — try a different city or practice area.</div>}
+              {paginatedFirms.map((firm,i)=>{
+                const isActive = selected?.name===firm.name&&selected?.city===firm.city;
+                const attyCount = firm.attorney_count||firm.attorney_count_web||firm.attorney_count_est||null;
+                return (
+                  <div key={i} className={`res-row${isActive?" active":""}`} onClick={()=>setSelected(isActive?null:firm)}
+                    style={{padding:"13px 20px",borderBottom:"1px solid #F9FAFB",display:"flex",alignItems:"center",gap:12,background:isActive?"#EEF2FF":"white"}}>
+                    <FirmAvatar name={firm.name} size={36} bg={isActive?"#3B5BDB":"#111827"}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:700,color:"#111827",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:6}}>
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{firm.name}</span>
+                        {firm.source==="LEA Research" && <span style={{flexShrink:0,fontSize:9,fontWeight:800,background:"#111827",color:"white",borderRadius:4,padding:"1px 5px",letterSpacing:"0.04em"}}>LEA</span>}
+                      </div>
+                      <div style={{fontSize:11,color:"#6B7280",marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                        <span>📍 {firm.city}, {firm.state}</span>
+                        {firm.google_stars>0 && <span style={{display:"inline-flex",alignItems:"center",gap:3}}>
+                          <span style={{color:"#D97706",fontWeight:700,fontSize:12}}>★ {firm.google_stars.toFixed(1)}</span>
+                          <span style={{color:"#9CA3AF",fontSize:11}}>({(firm.google_review_count||0).toLocaleString()} reviews)</span>
+                        </span>}
+                      </div>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,flexShrink:0}}>
+                      {attyCount
+                        ? <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:6,background:"#EFF6FF",color:"#1D4ED8"}}>{attyCount} attys</span>
+                        : <span style={{fontSize:11,padding:"2px 8px",borderRadius:6,background:"#F3F4F6",color:"#9CA3AF"}}>— attys</span>
+                      }
+                      <button onClick={e=>{e.stopPropagation();onToggleWatchlist(firm);}} style={{fontSize:10,padding:"2px 8px",borderRadius:6,border:"1px solid #E5E7EB",background:"white",color:"#6B7280",cursor:"pointer",fontWeight:600}}>
+                        {watchlist.some(w=>w.name===firm.name&&w.city===firm.city)?"✓ Saved":"+ Save"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+              {/* ── Pagination controls ── */}
+              {totalPages > 1 && (
+                <div style={{padding:"12px 16px",borderTop:"1px solid #F3F4F6",background:"#FAFAFA",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
+                  <button
+                    onClick={()=>{ setDiscoverPage(p=>Math.max(0,p-1)); setSelected(null); }}
+                    disabled={discoverPage===0}
+                    style={{padding:"6px 14px",borderRadius:7,border:"1px solid #E5E7EB",background:discoverPage===0?"#F9FAFB":"white",color:discoverPage===0?"#D1D5DB":"#374151",fontSize:12,fontWeight:700,cursor:discoverPage===0?"not-allowed":"pointer"}}>
+                    ← Prev
+                  </button>
+                  <div style={{display:"flex",gap:4}}>
+                    {Array.from({length:totalPages},(_,i)=>(
+                      <button key={i} onClick={()=>{ setDiscoverPage(i); setSelected(null); }}
+                        style={{width:28,height:28,borderRadius:6,border:"1px solid",
+                          borderColor:i===discoverPage?"#111827":"#E5E7EB",
+                          background:i===discoverPage?"#111827":"white",
+                          color:i===discoverPage?"white":"#6B7280",
+                          fontSize:11,fontWeight:700,cursor:"pointer",
+                          display: Math.abs(i - discoverPage) <= 2 ? "block" : "none"}}>
+                        {i+1}
+                      </button>
+                    ))}
+                  </div>
+                  <button
+                    onClick={()=>{ setDiscoverPage(p=>Math.min(totalPages-1,p+1)); setSelected(null); }}
+                    disabled={discoverPage===totalPages-1}
+                    style={{padding:"6px 14px",borderRadius:7,border:"1px solid #E5E7EB",background:discoverPage===totalPages-1?"#F9FAFB":"white",color:discoverPage===totalPages-1?"#D1D5DB":"#374151",fontSize:12,fontWeight:700,cursor:discoverPage===totalPages-1?"not-allowed":"pointer"}}>
+                    Next →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Court analytics results */}
+          {!loading && mode==="court" && analytics && (
+            <div style={{flex:1,overflowY:"auto"}}>
+              <div style={{padding:"10px 20px",fontSize:12,color:"#6B7280",background:"#FAFAFA",borderBottom:"1px solid #F3F4F6",display:"flex",gap:16}}>
+                <span><b style={{color:"#111827"}}>{analytics.total_firms_found||0}</b> firms</span>
+                <span><b style={{color:"#111827"}}>{analytics.total_cases_analyzed||0}</b> cases</span>
+                <span style={{marginLeft:"auto"}}>{analytics.city}, {analytics.state} · {analytics.practice_area}</span>
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                  <thead>
+                    <tr>
+                      <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",background:"#F8FAFC",borderBottom:"1px solid #E5E7EB"}}>#</th>
+                      <Th col="name">Firm</Th>
+                      <Th col="attorney_count_court">Attorneys</Th>
+                      <Th col="active_cases">Cases</Th>
+                      <Th col="cases_per_month">Cases/Mo</Th>
+                      <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",background:"#F8FAFC",borderBottom:"1px solid #E5E7EB"}}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {courtFirms.map((firm,i)=>{
+                      const isActive=selected?.name===firm.name&&selected?.city===firm.city;
+                      return (
+                        <tr key={i} className={`res-row${isActive?" active":""}`} onClick={()=>setSelected(isActive?null:firm)}
+                          style={{background:isActive?"#EEF2FF":"white",borderBottom:"1px solid #F3F4F6"}}>
+                          <td style={{padding:"10px 14px",color:"#9CA3AF",fontWeight:700,fontSize:12}}>{i+1}</td>
+                          <td style={{padding:"10px 14px"}}>
+                            <div style={{fontWeight:700,color:"#111827"}}>{firm.name}</div>
+                            <div style={{fontSize:11,color:"#6B7280"}}>{firm.city}, {firm.state}</div>
+                          </td>
+                          <td style={{padding:"10px 14px",fontWeight:700,color:"#1D4ED8"}}>{firm.attorney_count_court||0}</td>
+                          <td style={{padding:"10px 14px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <div style={{width:Math.min(60,Math.round((firm.active_cases/(analytics.results?.[0]?.active_cases||1))*60)),height:6,background:"#3B82F6",borderRadius:3}}/>
+                              <span style={{fontWeight:700}}>{firm.active_cases||0}</span>
+                            </div>
+                          </td>
+                          <td style={{padding:"10px 14px",color:"#374151",fontWeight:600}}>{firm.cases_per_month||0}</td>
+                          <td style={{padding:"10px 14px"}}>
+                            <div style={{display:"flex",gap:6}}>
+                              <button onClick={e=>{e.stopPropagation();onToggleWatchlist(firm);}} style={{fontSize:11,padding:"3px 9px",borderRadius:6,border:"1px solid #E5E7EB",background:"white",cursor:"pointer",fontWeight:600,color:"#374151"}}>
+                                {watchlist.some(w=>w.name===firm.name&&w.city===firm.city)?"✓ Saved":"+ Save"}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {!loading && !results && !analytics && !error && (
+            <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:"#9CA3AF"}}>
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <div style={{fontSize:14,fontWeight:600,color:"#374151"}}>Find law firm acquisition targets</div>
+              <div style={{fontSize:13,textAlign:"center",maxWidth:320,lineHeight:1.6}}>Enter a city and practice area above to discover firms. Shows firms with Google ratings first.</div>
+            </div>
+          )}
+        </div>
+
+        {/* Detail panel */}
+        {selected && (
+          <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+            <FirmDetailPanel firm={selected} watchlist={watchlist} onToggleWatchlist={onToggleWatchlist} currentUser={currentUser}/>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ── Heat Map Page ──────────────────────────────────────────────────────────────
+const STATE_FIPS = {
+  "01":"AL","02":"AK","04":"AZ","05":"AR","06":"CA","08":"CO","09":"CT",
+  "10":"DE","11":"DC","12":"FL","13":"GA","15":"HI","16":"ID","17":"IL",
+  "18":"IN","19":"IA","20":"KS","21":"KY","22":"LA","23":"ME","24":"MD",
+  "25":"MA","26":"MI","27":"MN","28":"MS","29":"MO","30":"MT","31":"NE",
+  "32":"NV","33":"NH","34":"NJ","35":"NM","36":"NY","37":"NC","38":"ND",
+  "39":"OH","40":"OK","41":"OR","42":"PA","44":"RI","45":"SC","46":"SD",
+  "47":"TN","48":"TX","49":"UT","50":"VT","51":"VA","53":"WA","54":"WV",
+  "55":"WI","56":"WY"
+};
+const STATE_NAMES = {
+  "AL":"Alabama","AK":"Alaska","AZ":"Arizona","AR":"Arkansas","CA":"California",
+  "CO":"Colorado","CT":"Connecticut","DE":"Delaware","DC":"Washington D.C.","FL":"Florida",
+  "GA":"Georgia","HI":"Hawaii","ID":"Idaho","IL":"Illinois","IN":"Indiana",
+  "IA":"Iowa","KS":"Kansas","KY":"Kentucky","LA":"Louisiana","ME":"Maine",
+  "MD":"Maryland","MA":"Massachusetts","MI":"Michigan","MN":"Minnesota",
+  "MS":"Mississippi","MO":"Missouri","MT":"Montana","NE":"Nebraska",
+  "NV":"Nevada","NH":"New Hampshire","NJ":"New Jersey","NM":"New Mexico",
+  "NY":"New York","NC":"North Carolina","ND":"North Dakota","OH":"Ohio",
+  "OK":"Oklahoma","OR":"Oregon","PA":"Pennsylvania","RI":"Rhode Island",
+  "SC":"South Carolina","SD":"South Dakota","TN":"Tennessee","TX":"Texas",
+  "UT":"Utah","VT":"Vermont","VA":"Virginia","WA":"Washington",
+  "WV":"West Virginia","WI":"Wisconsin","WY":"Wyoming"
+};
+const LEA_CITIES = [
+  {city:"New York",        state:"NY", lat:40.71, lng:-74.01},
+  {city:"Los Angeles",     state:"CA", lat:34.05, lng:-118.24},
+  {city:"Chicago",         state:"IL", lat:41.88, lng:-87.63},
+  {city:"Houston",         state:"TX", lat:29.76, lng:-95.37},
+  {city:"Phoenix",         state:"AZ", lat:33.45, lng:-112.07},
+  {city:"Philadelphia",    state:"PA", lat:39.95, lng:-75.17},
+  {city:"Dallas",          state:"TX", lat:32.78, lng:-96.80},
+  {city:"San Diego",       state:"CA", lat:32.72, lng:-117.16},
+  {city:"Atlanta",         state:"GA", lat:33.75, lng:-84.39},
+  {city:"Austin",          state:"TX", lat:30.27, lng:-97.74},
+  {city:"San Francisco",   state:"CA", lat:37.77, lng:-122.42},
+  {city:"Seattle",         state:"WA", lat:47.61, lng:-122.33},
+  {city:"Denver",          state:"CO", lat:39.74, lng:-104.98},
+  {city:"Nashville",       state:"TN", lat:36.17, lng:-86.78},
+  {city:"Washington",      state:"DC", lat:38.91, lng:-77.04},
+  {city:"Las Vegas",       state:"NV", lat:36.17, lng:-115.14},
+  {city:"Miami",           state:"FL", lat:25.77, lng:-80.19},
+  {city:"Orlando",         state:"FL", lat:28.54, lng:-81.38},
+  {city:"Tampa",           state:"FL", lat:27.95, lng:-82.46},
+  {city:"Jacksonville",    state:"FL", lat:30.33, lng:-81.66},
+  {city:"Charlotte",       state:"NC", lat:35.23, lng:-80.84},
+  {city:"Raleigh",         state:"NC", lat:35.78, lng:-78.64},
+  {city:"Minneapolis",     state:"MN", lat:44.98, lng:-93.27},
+  {city:"St. Louis",       state:"MO", lat:38.63, lng:-90.20},
+  {city:"Kansas City",     state:"MO", lat:39.10, lng:-94.58},
+  {city:"Detroit",         state:"MI", lat:42.33, lng:-83.05},
+  {city:"Boston",          state:"MA", lat:42.36, lng:-71.06},
+  {city:"Pittsburgh",      state:"PA", lat:40.44, lng:-79.99},
+  {city:"Cincinnati",      state:"OH", lat:39.10, lng:-84.51},
+  {city:"Cleveland",       state:"OH", lat:41.50, lng:-81.69},
+  {city:"Columbus",        state:"OH", lat:39.96, lng:-82.99},
+  {city:"Indianapolis",    state:"IN", lat:39.77, lng:-86.16},
+  {city:"Milwaukee",       state:"WI", lat:43.04, lng:-87.91},
+  {city:"Baltimore",       state:"MD", lat:39.29, lng:-76.61},
+  {city:"Portland",        state:"OR", lat:45.52, lng:-122.68},
+  {city:"Sacramento",      state:"CA", lat:38.58, lng:-121.49},
+  {city:"San Jose",        state:"CA", lat:37.34, lng:-121.89},
+  {city:"New Orleans",     state:"LA", lat:29.95, lng:-90.07},
+  {city:"Louisville",      state:"KY", lat:38.25, lng:-85.76},
+  {city:"Memphis",         state:"TN", lat:35.15, lng:-90.05},
+  {city:"Richmond",        state:"VA", lat:37.54, lng:-77.43},
+  {city:"Oklahoma City",   state:"OK", lat:35.47, lng:-97.52},
+  {city:"Tucson",          state:"AZ", lat:32.22, lng:-110.93},
+  {city:"Albuquerque",     state:"NM", lat:35.08, lng:-106.65},
+  {city:"Omaha",           state:"NE", lat:41.26, lng:-96.01},
+  {city:"Fresno",          state:"CA", lat:36.74, lng:-119.79},
+  {city:"Bakersfield",     state:"CA", lat:35.37, lng:-119.02},
+  {city:"Long Beach",      state:"CA", lat:33.77, lng:-118.19},
+  {city:"Riverside",       state:"CA", lat:33.98, lng:-117.37},
+  {city:"Anaheim",         state:"CA", lat:33.84, lng:-117.91},
+  {city:"Stockton",        state:"CA", lat:37.96, lng:-121.29},
+  {city:"Corpus Christi",  state:"TX", lat:27.80, lng:-97.40},
+  {city:"El Paso",         state:"TX", lat:31.76, lng:-106.49},
+  {city:"Fort Worth",      state:"TX", lat:32.75, lng:-97.33},
+  {city:"San Antonio",     state:"TX", lat:29.42, lng:-98.49},
+  {city:"Lexington",       state:"KY", lat:38.04, lng:-84.50},
+  {city:"Virginia Beach",  state:"VA", lat:36.85, lng:-75.98},
+  {city:"Colorado Springs",state:"CO", lat:38.83, lng:-104.82},
+];
+
+function HeatMapPage({ watchlist, onGoToDiscover, onSelectFirm }) {
+  const svgRef       = React.useRef(null);
+  const containerRef = React.useRef(null);
+  const [cityData,      setCityData]      = useState({});
+  const [topoData,      setTopoData]      = useState(null);
+  const [mapView,       setMapView]       = useState("country");
+  const [activeState,   setActiveState]   = useState(null);
+  const [activeCity,    setActiveCity]    = useState(null);
+  const [tooltip,       setTooltip]       = useState(null);
+  const [dims,          setDims]          = useState({w:900, h:540});
+
+  useEffect(() => {
+    fetch("https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json")
+      .then(r => r.json()).then(setTopoData).catch(() => {});
+    fetch("/api/lea-firms-summary")
+      .then(r => r.json())
+      .then(data => {
+        const byCity = {};
+        (data.firms||[]).forEach(f => {
+          const key = f.city+"|"+f.state;
+          if (!byCity[key]) byCity[key] = [];
+          byCity[key].push(f);
+        });
+        setCityData(byCity);
+      }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver(entries => {
+      const {width, height} = entries[0].contentRect;
+      if (width > 0 && height > 0) setDims({w: width, h: height});
+    });
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  const stateFirmCounts = React.useMemo(() => {
+    const counts = {};
+    LEA_CITIES.forEach(c => {
+      const n = (cityData[c.city+"|"+c.state]||[]).length;
+      counts[c.state] = (counts[c.state]||0) + n;
+    });
+    return counts;
+  }, [cityData]);
+
+  const maxCount = Math.max(...Object.values(stateFirmCounts), 1);
+
+  useEffect(() => {
+    if (!topoData || !svgRef.current || dims.w < 100) return;
+    if (mapView === "country") drawCountry();
+    else if (mapView === "state" && activeState) drawState();
+  }, [topoData, cityData, mapView, activeState, dims, activeCity]);
+
+  function drawCountry() {
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove();
+    const {w:W, h:H} = dims;
+    const proj = d3.geoAlbersUsa().scale(W * 1.18).translate([W/2, H/2]);
+    const path = d3.geoPath().projection(proj);
+
+    let statesFeature;
+    try { statesFeature = topojson.feature(topoData, topoData.objects.states); }
+    catch(e) { return; }
+
+    const colorScale = d3.scaleSequential()
+      .domain([0, maxCount])
+      .interpolator(t => t === 0 ? "#EEF2FF" : d3.interpolateBlues(0.2 + t * 0.8));
+
+    const stateG = svg.append("g");
+    stateG.selectAll("path")
+      .data(statesFeature.features)
+      .join("path")
+      .attr("d", path)
+      .attr("fill", d => {
+        const abbr = STATE_FIPS[String(d.id).padStart(2,"0")];
+        return colorScale(stateFirmCounts[abbr]||0);
+      })
+      .attr("stroke", "white")
+      .attr("stroke-width", 1.0)
+      .style("cursor", d => {
+        const abbr = STATE_FIPS[String(d.id).padStart(2,"0")];
+        return (stateFirmCounts[abbr]||0) > 0 ? "pointer" : "default";
+      })
+      .on("mousemove", (event, d) => {
+        const abbr = STATE_FIPS[String(d.id).padStart(2,"0")];
+        const count = stateFirmCounts[abbr]||0;
+        setTooltip({x: event.offsetX, y: event.offsetY, text: (STATE_NAMES[abbr]||abbr) + (count > 0 ? " — " + count + " firms" : " — no data")});
+      })
+      .on("mouseleave", () => setTooltip(null))
+      .on("click", (event, d) => {
+        const abbr = STATE_FIPS[String(d.id).padStart(2,"0")];
+        if (!abbr || !stateFirmCounts[abbr]) return;
+        setActiveState({abbr, name: STATE_NAMES[abbr]||abbr, feature: d});
+        setActiveCity(null);
+        setMapView("state");
+        setTooltip(null);
+      });
+
+    // State abbreviation labels
+    svg.append("g").selectAll("text")
+      .data(statesFeature.features)
+      .join("text")
+      .attr("transform", d => { const c = path.centroid(d); return c && !isNaN(c[0]) ? "translate("+c[0]+","+c[1]+")" : "translate(-999,-999)"; })
+      .attr("text-anchor","middle").attr("dy","0.35em")
+      .attr("font-size", 9).attr("font-weight","700").attr("pointer-events","none")
+      .attr("fill", d => {
+        const abbr = STATE_FIPS[String(d.id).padStart(2,"0")];
+        const count = stateFirmCounts[abbr]||0;
+        return count > maxCount * 0.55 ? "white" : "#1e3a5f";
+      })
+      .text(d => STATE_FIPS[String(d.id).padStart(2,"0")]||"");
+  }
+
+  function drawState() {
+    const svg = d3.select(svgRef.current);
+    svg.selectAll("*").remove();
+    const {w:W, h:H} = dims;
+
+    let proj;
+    try {
+      proj = d3.geoAlbersUsa().fitExtent([[60, 60], [W-60, H-80]], activeState.feature);
+    } catch(e) {
+      proj = d3.geoAlbersUsa().scale(W*1.18).translate([W/2, H/2]);
+    }
+    const path = d3.geoPath().projection(proj);
+
+    // State fill + border
+    svg.append("path").datum(activeState.feature)
+      .attr("d", path)
+      .attr("fill", "#DBEAFE")
+      .attr("stroke", "#3B82F6")
+      .attr("stroke-width", 2);
+
+    const citiesInState = LEA_CITIES.filter(c => c.state === activeState.abbr);
+    const counts = citiesInState.map(c => (cityData[c.city+"|"+c.state]||[]).length);
+    const maxCity = Math.max(...counts, 1);
+    const rScale = d3.scaleSqrt().domain([0, maxCity]).range([8, 32]);
+    const colorScale = d3.scaleSequential()
+      .domain([0, maxCity])
+      .interpolator(t => d3.interpolateBlues(0.3 + t * 0.7));
+
+    citiesInState.forEach(c => {
+      const pt = proj([c.lng, c.lat]);
+      if (!pt || isNaN(pt[0])) return;
+      const firms = cityData[c.city+"|"+c.state]||[];
+      if (firms.length === 0) return;
+      const isActive = activeCity && activeCity.city === c.city;
+      const r = rScale(firms.length);
+
+      const g = svg.append("g")
+        .attr("transform", "translate("+pt[0]+","+pt[1]+")")
+        .style("cursor","pointer")
+        .on("click", () => setActiveCity({city:c.city, state:c.state, firms}))
+        .on("mousemove", event => setTooltip({x: event.offsetX, y: event.offsetY, text: c.city+" — "+firms.length+" firms (click to expand)"}))
+        .on("mouseleave", () => setTooltip(null));
+
+      // Outer glow
+      g.append("circle").attr("r", r+6)
+        .attr("fill", isActive ? "#FCD34D" : colorScale(firms.length))
+        .attr("opacity", 0.25);
+      // Main circle
+      g.append("circle").attr("r", r)
+        .attr("fill", isActive ? "#F59E0B" : colorScale(firms.length))
+        .attr("stroke","white").attr("stroke-width", 2.5)
+        .attr("opacity", 0.92);
+      // Count label
+      g.append("text")
+        .attr("text-anchor","middle").attr("dy","0.35em")
+        .attr("font-size", r > 18 ? 12 : 9)
+        .attr("font-weight","900").attr("fill","white")
+        .attr("pointer-events","none")
+        .text(firms.length);
+      // City name below
+      g.append("text")
+        .attr("text-anchor","middle").attr("y", r+13)
+        .attr("font-size", 10).attr("font-weight","700")
+        .attr("fill", isActive ? "#92400E" : "#1e3a5f")
+        .attr("pointer-events","none")
+        .text(c.city);
+    });
+  }
+
+  const totalFirms   = Object.values(cityData).reduce((s,a) => s+a.length, 0);
+  const coveredStates = Object.keys(stateFirmCounts).filter(k => stateFirmCounts[k]>0).length;
+
+  return (
+    <div ref={containerRef} style={{position:"relative",width:"100%",height:"100%",overflow:"hidden",background:"#0f172a"}}>
+      <svg ref={svgRef} width="100%" height="100%" style={{display:"block"}}/>
+
+      {/* Country stats bar */}
+      {mapView === "country" && (
+        <div style={{position:"absolute",top:16,left:16,display:"flex",gap:12,alignItems:"center"}}>
+          <div style={{background:"rgba(255,255,255,0.1)",backdropFilter:"blur(8px)",borderRadius:10,padding:"10px 16px",border:"1px solid rgba(255,255,255,0.15)"}}>
+            <div style={{fontSize:22,fontWeight:900,color:"white",lineHeight:1}}>{totalFirms}</div>
+            <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.07em"}}>LEA Firms</div>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.1)",backdropFilter:"blur(8px)",borderRadius:10,padding:"10px 16px",border:"1px solid rgba(255,255,255,0.15)"}}>
+            <div style={{fontSize:22,fontWeight:900,color:"white",lineHeight:1}}>{coveredStates}</div>
+            <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.07em"}}>States</div>
+          </div>
+          <div style={{background:"rgba(255,255,255,0.08)",backdropFilter:"blur(8px)",borderRadius:10,padding:"10px 16px",border:"1px solid rgba(255,255,255,0.1)"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)"}}>Click a state to drill in →</div>
+          </div>
+        </div>
+      )}
+
+      {/* Color legend */}
+      {mapView === "country" && (
+        <div style={{position:"absolute",bottom:20,right:20,background:"rgba(255,255,255,0.1)",backdropFilter:"blur(8px)",borderRadius:8,padding:"10px 14px",border:"1px solid rgba(255,255,255,0.15)"}}>
+          <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.55)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Firm Density</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <span style={{fontSize:9,color:"rgba(255,255,255,0.5)"}}>Low</span>
+            <div style={{width:80,height:8,borderRadius:4,background:"linear-gradient(to right, #EEF2FF, #1e40af)"}}/>
+            <span style={{fontSize:9,color:"rgba(255,255,255,0.5)"}}>High</span>
+          </div>
+        </div>
+      )}
+
+      {/* Back + state header */}
+      {mapView === "state" && activeState && (
+        <div style={{position:"absolute",top:16,left:16,display:"flex",alignItems:"center",gap:10}}>
+          <button onClick={() => { setMapView("country"); setActiveState(null); setActiveCity(null); setTooltip(null); }}
+            style={{padding:"8px 14px",borderRadius:8,border:"none",background:"rgba(255,255,255,0.15)",backdropFilter:"blur(8px)",color:"white",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6,border:"1px solid rgba(255,255,255,0.2)"}}>
+            ← All States
+          </button>
+          <div style={{background:"rgba(255,255,255,0.12)",backdropFilter:"blur(8px)",borderRadius:8,padding:"8px 16px",border:"1px solid rgba(255,255,255,0.15)"}}>
+            <span style={{fontSize:15,fontWeight:800,color:"white"}}>{activeState.name}</span>
+            <span style={{fontSize:11,color:"rgba(255,255,255,0.55)",marginLeft:10}}>{stateFirmCounts[activeState.abbr]||0} firms · click a city</span>
+          </div>
+        </div>
+      )}
+
+      {/* Hover tooltip */}
+      {tooltip && (
+        <div style={{position:"absolute",left:tooltip.x+14,top:tooltip.y-10,background:"rgba(15,23,42,0.92)",color:"white",borderRadius:7,padding:"6px 12px",fontSize:11,fontWeight:700,pointerEvents:"none",border:"1px solid rgba(255,255,255,0.1)",backdropFilter:"blur(6px)",whiteSpace:"nowrap",zIndex:100}}>
+          {tooltip.text}
+        </div>
+      )}
+
+      {/* City firms panel */}
+      {activeCity && (
+        <div style={{position:"absolute",top:0,right:0,width:300,height:"100%",background:"white",boxShadow:"-6px 0 24px rgba(0,0,0,0.25)",display:"flex",flexDirection:"column",overflow:"hidden",zIndex:50}}>
+          <div style={{padding:"16px 18px 12px",background:"linear-gradient(135deg,#1e3a5f,#1D4ED8)",flexShrink:0}}>
+            <div style={{display:"flex",alignItems:"flex-start"}}>
+              <div style={{flex:1}}>
+                <div style={{fontSize:15,fontWeight:800,color:"white"}}>{activeCity.city}</div>
+                <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",marginTop:2}}>{activeCity.state} · {activeCity.firms.length} firms · click a firm to open full analysis</div>
+              </div>
+              <button onClick={() => setActiveCity(null)} style={{background:"rgba(255,255,255,0.15)",border:"none",color:"white",borderRadius:6,width:26,height:26,cursor:"pointer",fontSize:14,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+            </div>
+          </div>
+          <div style={{flex:1,overflowY:"auto",padding:"10px 12px"}}>
+            {[...activeCity.firms]
+              .sort((a,b) => (b.google_review_count||0)-(a.google_review_count||0))
+              .map((f,i) => (
+                <div key={i} onClick={()=>onSelectFirm && onSelectFirm(f)} style={{display:"flex",alignItems:"flex-start",gap:9,padding:"9px 10px",borderRadius:9,marginBottom:6,background:"#F8FAFC",border:"1px solid #EFF3F7",cursor:"pointer",transition:"background 0.12s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background="#EFF6FF"}
+                  onMouseLeave={e=>e.currentTarget.style.background="#F8FAFC"}>
+                  <div style={{width:24,height:24,borderRadius:"50%",background:i===0?"#1D4ED8":i<3?"#3B82F6":"#BFDBFE",color:i<3?"white":"#1D4ED8",fontSize:9,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>
+                    {i+1}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,fontWeight:700,color:"#111827",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:5}}>
+                      <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+                      {f.source==="LEA Research" && <span style={{fontSize:7,fontWeight:800,background:"#111827",color:"white",borderRadius:3,padding:"1px 4px",flexShrink:0}}>LEA</span>}
+                    </div>
+                    {f.google_stars > 0 && (
+                      <div style={{fontSize:10,color:"#D97706",fontWeight:700,marginTop:2}}>
+                        {"★"} {f.google_stars.toFixed(1)} <span style={{color:"#9CA3AF",fontWeight:400}}>({(f.google_review_count||0).toLocaleString()} reviews)</span>
+                      </div>
+                    )}
+                    {f.lea_notes && (
+                      <div style={{fontSize:10,color:"#6B7280",marginTop:2,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{f.lea_notes}</div>
+                    )}
+                  </div>
+                  {f.lea_rank > 0 && (
+                    <span style={{fontSize:8,fontWeight:700,padding:"2px 6px",borderRadius:4,background:"#EFF6FF",color:"#1D4ED8",flexShrink:0,marginTop:2}}>#{f.lea_rank}</span>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Watchlist Page ─────────────────────────────────────────────────────────────
+function WatchlistPage({ watchlist, onToggleWatchlist, onGoToManage, currentUser }) {
+  const [selected, setSelected] = useState(null);
+  useEffect(()=>{ if(watchlist.length===0) setSelected(null); },[watchlist.length]);
+
+  return (
+    <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+      {/* Left list */}
+      <div style={{width:selected?320:undefined,flex:selected?undefined:1,maxWidth:selected?320:480,margin:selected?undefined:"0 auto",borderRight:selected?"1px solid #E5E7EB":"none",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{padding:"16px 20px 12px",borderBottom:"1px solid #F3F4F6",display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill={watchlist.length>0?"#111827":"none"} stroke="#111827" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <span style={{fontSize:14,fontWeight:700,color:"#111827"}}>Watchlist</span>
+          {watchlist.length>0 && <span style={{marginLeft:"auto",background:"#111827",color:"white",borderRadius:10,padding:"1px 8px",fontSize:11,fontWeight:800}}>{watchlist.length}</span>}
+        </div>
+        <div style={{flex:1,overflowY:"auto"}}>
+          {watchlist.length===0 ? (
+            <div style={{padding:"60px 32px",textAlign:"center",color:"#9CA3AF"}}>
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{margin:"0 auto 16px",display:"block"}}><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+              <div style={{fontSize:14,fontWeight:600,color:"#374151",marginBottom:8}}>No firms saved yet</div>
+              <div style={{fontSize:13,lineHeight:1.6}}>Go to Discover, search for firms, and click "+ Save" to add them here.</div>
+            </div>
+          ) : watchlist.map((f,i)=>{
+            const isActive=selected?.name===f.name&&selected?.city===f.city;
+            const attyCount=f.attorney_count||f.attorney_count_court||null;
+            return (
+              <div key={i} className={`wl-row${isActive?" active":""}`} onClick={()=>setSelected(isActive?null:f)}
+                style={{padding:"14px 20px",borderBottom:"1px solid #F9FAFB",display:"flex",alignItems:"center",gap:12,background:isActive?"#EEF2FF":"white",cursor:"pointer"}}>
+                <FirmAvatar name={f.name} size={38} bg={isActive?"#3B5BDB":"#111827"}/>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#111827",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</div>
+                  <div style={{fontSize:11,color:"#6B7280",marginTop:2,display:"flex",gap:6,flexWrap:"wrap"}}>
+                    <span>📍 {f.city}, {f.state}</span>
+                    {f.google_stars>0 && <Stars rating={f.google_stars} reviewCount={f.google_review_count} source={f.rating_source||"Google"}/>}
+                  </div>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,flexShrink:0}}>
+                  {attyCount && <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:6,background:"#EFF6FF",color:"#1D4ED8"}}>{attyCount} attys</span>}
+                  <button onClick={e=>{e.stopPropagation();onGoToManage();}} style={{fontSize:10,padding:"2px 8px",borderRadius:6,border:"none",background:"#111827",color:"white",cursor:"pointer",fontWeight:600}}>
+                    Outreach →
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      {/* Detail panel */}
+      {selected ? (
+        <div style={{flex:1,overflow:"hidden"}}>
+          <FirmDetailPanel firm={selected} watchlist={watchlist} onToggleWatchlist={onToggleWatchlist} currentUser={currentUser}/>
+        </div>
+      ) : watchlist.length>0 && (
+        <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12,color:"#9CA3AF"}}>
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#E5E7EB" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+          <div style={{fontSize:14,fontWeight:600,color:"#374151"}}>Select a firm to view details</div>
+          <div style={{fontSize:13}}>Click any firm in the list to see its profile</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Manage / CRM Page ──────────────────────────────────────────────────────────
+
+const SAMPLE_FIRMS = [
+  { name:"Weitz & Luxenberg",    city:"New York",    state:"NY", google_stars:4.2, google_review_count:318, attorney_count:85,  rating_source:"Google", practice_area:"Personal Injury" },
+  { name:"Flanzig & Flanzig LLP",city:"Garden City", state:"NY", google_stars:5.0, google_review_count:47,  attorney_count:6,   rating_source:"Google", practice_area:"Personal Injury" },
+  { name:"Avenue Law Firm",      city:"New York",    state:"NY", google_stars:4.9, google_review_count:203, attorney_count:12,  rating_source:"Google", practice_area:"Personal Injury" },
+  { name:"Sullivan & Cromwell",  city:"New York",    state:"NY", google_stars:4.1, google_review_count:91,  attorney_count:150, rating_source:"Google", practice_area:"M&A" },
+  { name:"Davis Polk & Wardwell",city:"New York",    state:"NY", google_stars:4.4, google_review_count:58,  attorney_count:200, rating_source:"Google", practice_area:"Corporate" },
+];
+const SAMPLE_CRM = {
+  "Weitz & Luxenberg|New York":     { stage:"contacted", emailStatus:"sent",       notes:"Met at NYLJ conference. Strong case volume.",   activities:["5/10/2026 — Added","5/12/2026 — Moved to Contacted","5/15/2026 — Email sent"], dateAdded:"5/10/2026" },
+  "Flanzig & Flanzig LLP|Garden City":{ stage:"responded",emailStatus:"responded", notes:"Very receptive. Call scheduled next week.",      activities:["5/8/2026 — Added","5/9/2026 — Contacted","5/14/2026 — Email sent","5/16/2026 — Response received"], dateAdded:"5/8/2026" },
+  "Avenue Law Firm|New York":       { stage:"prospect",  emailStatus:"not_sent",   notes:"High review count — worth prioritising.",       activities:["5/18/2026 — Added"], dateAdded:"5/18/2026" },
+  "Sullivan & Cromwell|New York":   { stage:"followup",  emailStatus:"sent",       notes:"No response to first email. Follow up Monday.", activities:["5/5/2026 — Added","5/7/2026 — Contacted","5/11/2026 — Follow-up"], dateAdded:"5/5/2026" },
+  "Davis Polk & Wardwell|New York": { stage:"closed",    emailStatus:"responded",  notes:"Partnership signed Q3 2026.",                   activities:["4/20/2026 — Added","5/1/2026 — Closed"], dateAdded:"4/20/2026" },
+};
+
+
+// ── Weekly Digest Trigger Component ───────────────────────────────────────────
+function WeeklyDigestTrigger() {
+  const [loading, setLoading] = useState(false);
+  const [result,  setResult]  = useState(null);
+  const [error,   setError]   = useState("");
+
+  const TOP_MARKETS = [
+    {city:"Miami",         state:"FL"},
+    {city:"Atlanta",       state:"GA"},
+    {city:"New York",      state:"NY"},
+    {city:"Chicago",       state:"IL"},
+    {city:"Tampa",         state:"FL"},
+    {city:"Houston",       state:"TX"},
+    {city:"Dallas",        state:"TX"},
+    {city:"Los Angeles",   state:"CA"},
+    {city:"Philadelphia",  state:"PA"},
+    {city:"Charlotte",     state:"NC"},
+  ];
+
+  async function run() {
+    setLoading(true); setError(""); setResult(null);
+    try {
+      const resp = await fetch("/api/digest", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          markets: TOP_MARKETS.map(m => ({...m, practice_area:"personal injury"})),
+          max_per_market: 5
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || "Digest failed");
+      setResult(data);
+    } catch(e) { setError(e.message); }
+    finally    { setLoading(false); }
+  }
+
+  return (
+    <div>
+      <button onClick={run} disabled={loading}
+        style={{padding:"8px 18px",borderRadius:8,border:"none",background:loading?"#F3F4F6":"#111827",color:loading?"#9CA3AF":"white",fontSize:12,fontWeight:700,cursor:loading?"not-allowed":"pointer",display:"inline-flex",alignItems:"center",gap:7,marginBottom:10}}>
+        {loading ? <><Spinner size={11} color="#9CA3AF"/> Running digest across {TOP_MARKETS.length} markets…</> : "▶ Run Weekly Digest Now"}
+      </button>
+      {error && <div style={{fontSize:11,color:"#DC2626",marginBottom:8}}>{error}</div>}
+      {result && (
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:"#374151",marginBottom:8}}>
+            Digest complete — {new Date().toLocaleString()} · {(result.markets||[]).length} markets scanned
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8,maxHeight:300,overflowY:"auto"}}>
+            {(result.markets||[]).map((mkt,i) => (
+              <div key={i} style={{background:"#F9FAFB",borderRadius:8,padding:"10px 12px",border:"1px solid #F3F4F6"}}>
+                <div style={{fontSize:11,fontWeight:800,color:"#374151",marginBottom:6}}>{mkt.market}</div>
+                {(mkt.top_firms||[]).slice(0,3).map((f,j) => (
+                  <div key={j} style={{display:"flex",alignItems:"center",gap:6,marginBottom:4}}>
+                    <span style={{fontSize:9,fontWeight:800,color:"#9CA3AF",width:16}}>#{j+1}</span>
+                    <span style={{fontSize:11,fontWeight:600,color:"#111827",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+                    {f.rule_score != null && (
+                      <span style={{fontSize:9,fontWeight:700,color:"#4F46E5",flexShrink:0}}>{Math.round(f.rule_score)}</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ManagePage({ watchlist, crmData, setCrmData }) {
+  // ── Local CRM state ──────────────────────────────────────
+  const [view,     setView]     = useState("table");
+  const [selected, setSelected] = useState(null);
+  const [noteText, setNoteText] = useState("");
+  const [sortCol,  setSortCol]  = useState("name");
+  const [sortDir,  setSortDir]  = useState("asc");
+  const [newsMap,  setNewsMap]  = useState({});
+  const [loadingNews, setLoadingNews] = useState(null);
+
+  // ── Monday.com state ─────────────────────────────────────
+  const [mode,          setMode]          = useState("local");   // "local" | "monday"
+  const [tokenInput,    setTokenInput]    = useState("");
+  const [mondayToken,   setMondayToken]   = useState("");
+  const [mondayBoards,  setMondayBoards]  = useState(null);
+  const [mondayBoardId, setMondayBoardId] = useState("");
+  const [mondayBoard,   setMondayBoard]   = useState(null);
+  const [mondayLoading, setMondayLoading] = useState(false);
+  const [mondayError,   setMondayError]   = useState("");
+  const [showToken,     setShowToken]     = useState(false);
+
+  // ── Local CRM helpers ────────────────────────────────────
+  const isDemo   = watchlist.length === 0;
+  const allFirms = isDemo ? SAMPLE_FIRMS : watchlist;
+
+  function getCrm(f) {
+    const key = `${f.name}|${f.city}`;
+    if (isDemo) return SAMPLE_CRM[key] || { stage:"prospect", emailStatus:"not_sent", notes:"", activities:[], dateAdded:"—" };
+    return crmData[key]              || { stage:"prospect", emailStatus:"not_sent", notes:"", activities:[], dateAdded:"—" };
+  }
+  function updateCrm(firm, patch) {
+    if (isDemo) return;
+    const key = `${firm.name}|${firm.city}`;
+    setCrmData(d => ({ ...d, [key]: { ...d[key], ...patch } }));
+  }
+  function setEmailStatus(firm, st) {
+    const activity = `${new Date().toLocaleDateString()} — Email: ${emailLabel[st]}`;
+    updateCrm(firm, { emailStatus: st, activities:[...(getCrm(firm).activities||[]), activity] });
+  }
+  function advanceStage(firm, e) {
+    e?.stopPropagation();
+    const stages = CRM_STAGES.map(s=>s.id);
+    const cur  = getCrm(firm).stage || "prospect";
+    const next = stages[Math.min(stages.indexOf(cur)+1, stages.length-1)];
+    const label = CRM_STAGES.find(s=>s.id===next)?.label;
+    updateCrm(firm, { stage:next, activities:[...(getCrm(firm).activities||[]), `${new Date().toLocaleDateString()} — Moved to ${label}`] });
+  }
+  async function loadNews(firm) {
+    const key = `${firm.name}|${firm.city}`;
+    setLoadingNews(key);
+    try {
+      const resp = await fetch("/api/scrape", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ firm_name:firm.name, city:firm.city, state:firm.state||"", source_key:"news_press" })
+      });
+      const data = await resp.json();
+      setNewsMap(m => ({ ...m, [key]: data.result?.articles || [] }));
+    } catch { setNewsMap(m => ({ ...m, [key]: [] })); }
+    finally  { setLoadingNews(null); }
+  }
+
+  const emailDotColor = { not_sent:"#D1D5DB", sent:"#D97706", responded:"#16A34A", no_response:"#DC2626" };
+  const emailLabel    = { not_sent:"Not Sent", sent:"Sent",  responded:"Responded", no_response:"No Response" };
+
+  // ── Monday.com helpers ───────────────────────────────────
+  async function connectMonday() {
+    if (!tokenInput.trim()) return;
+    setMondayLoading(true); setMondayError("");
+    try {
+      const resp = await fetch("/api/monday/boards", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ token: tokenInput.trim() })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || "Connection failed");
+      setMondayToken(tokenInput.trim());
+      setMondayBoards(data.boards);
+      setShowToken(false);
+      if (data.boards.length > 0) {
+        const firstId = String(data.boards[0].id);
+        setMondayBoardId(firstId);
+        fetchMondayBoard(firstId, tokenInput.trim());
+      }
+    } catch(e) { setMondayError(e.message); }
+    finally    { setMondayLoading(false); }
+  }
+  async function fetchMondayBoard(boardId, token) {
+    setMondayLoading(true); setMondayError("");
+    try {
+      const resp = await fetch("/api/monday/items", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ token: token||mondayToken, board_id: boardId })
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || "Failed to load board");
+      setMondayBoard(data.board);
+    } catch(e) { setMondayError(e.message); }
+    finally    { setMondayLoading(false); }
+  }
+
+  // Map a Monday.com item's column_values to a readable object
+  function parseMondayItem(item, columns) {
+    const cv = {};
+    (item.column_values||[]).forEach(col => {
+      const colDef = columns.find(c=>c.id===col.id);
+      const title  = colDef?.title || col.id;
+      cv[title]    = col.text || "";
+    });
+    return cv;
+  }
+
+  // Find the "status" column value for an item (Monday.com's colored pill column)
+  function getMondayStatus(item, columns) {
+    const statusCol = columns.find(c=>c.type==="color"||c.type==="status"||c.title?.toLowerCase().includes("status")||c.title?.toLowerCase().includes("stage"));
+    if (!statusCol) return "";
+    const cv = (item.column_values||[]).find(c=>c.id===statusCol.id);
+    return cv?.text || "";
+  }
+
+  // ── Stats (local) ────────────────────────────────────────
+  const total     = allFirms.length;
+  const contacted = allFirms.filter(f=>getCrm(f).emailStatus!=="not_sent").length;
+  const responded = allFirms.filter(f=>getCrm(f).emailStatus==="responded").length;
+  const closed    = allFirms.filter(f=>getCrm(f).stage==="closed").length;
+
+  // ── Sorted firms (local table) ───────────────────────────
+  const sortedFirms = [...allFirms].sort((a,b) => {
+    let av, bv;
+    if      (sortCol==="name")    { av=a.name; bv=b.name; }
+    else if (sortCol==="rating")  { av=a.google_stars||0; bv=b.google_stars||0; }
+    else if (sortCol==="reviews") { av=a.google_review_count||0; bv=b.google_review_count||0; }
+    else if (sortCol==="attys")   { av=a.attorney_count||0; bv=b.attorney_count||0; }
+    else if (sortCol==="stage")   { av=CRM_STAGES.findIndex(s=>s.id===getCrm(a).stage); bv=CRM_STAGES.findIndex(s=>s.id===getCrm(b).stage); }
+    else { av=a.name; bv=b.name; }
+    if (typeof av==="string") return sortDir==="asc"?av.localeCompare(bv):bv.localeCompare(av);
+    return sortDir==="asc"?av-bv:bv-av;
+  });
+
+  function SortTh({ col, label, style={} }) {
+    const active = sortCol===col;
+    return (
+      <th onClick={()=>{ if(active) setSortDir(d=>d==="asc"?"desc":"asc"); else{setSortCol(col);setSortDir("asc");} }}
+        style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700,
+                 color:active?"#4F46E5":"#6B7280", textTransform:"uppercase", letterSpacing:"0.05em",
+                 cursor:"pointer", userSelect:"none", background:"#F8F9FB",
+                 borderBottom:"2px solid #E5E7EB", whiteSpace:"nowrap", ...style }}>
+        {label} {active?(sortDir==="asc"?"↑":"↓"):""}
+      </th>
+    );
+  }
+
+  // ── Monday.com items table ───────────────────────────────
+  const mondayItems   = mondayBoard?.items_page?.items || [];
+  const mondayColumns = mondayBoard?.columns || [];
+  // Determine which columns to show (skip system/formula types, limit to 5)
+  const displayCols = mondayColumns
+    .filter(c => !["formula","mirror","dependency","button","doc"].includes(c.type))
+    .filter(c => c.title !== "Name")
+    .slice(0, 5);
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden",background:"#F8F9FB"}}>
+
+      {/* ── Top bar ── */}
+      <div style={{background:"white",borderBottom:"1px solid #E5E7EB",padding:"0 20px",flexShrink:0}}>
+        {/* Title row */}
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 0 10px",flexWrap:"wrap"}}>
+          <div>
+            <div style={{fontSize:18,fontWeight:800,color:"#111827",letterSpacing:"-0.02em"}}>
+              {mode==="monday" && mondayBoard ? mondayBoard.name : "Pipeline Board"}
+            </div>
+            <div style={{fontSize:12,color:"#9CA3AF",marginTop:1}}>
+              {mode==="monday"
+                ? (mondayBoard ? `${mondayItems.length} items from Monday.com` : "Connect your Monday.com account below")
+                : (isDemo ? "Demo mode — add firms from Discover to populate your real pipeline" : `${total} firms tracked`)}
+            </div>
+          </div>
+          {isDemo && mode==="local" && (
+            <span style={{background:"#FEF3C7",color:"#D97706",fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,border:"1px solid #FDE68A"}}>Demo</span>
+          )}
+
+          {/* Source mode toggle */}
+          <div style={{display:"flex",background:"#F3F4F6",borderRadius:8,padding:3,gap:2}}>
+            {[["local","📋  Local CRM"],["monday","☰  Monday.com"]].map(([v,lbl])=>(
+              <button key={v} onClick={()=>setMode(v)}
+                style={{ padding:"5px 14px",borderRadius:6,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",
+                         background:mode===v?"white":"transparent", color:mode===v?"#4F46E5":"#6B7280",
+                         boxShadow:mode===v?"0 1px 4px rgba(0,0,0,0.08)":"none" }}>
+                {lbl}
+              </button>
+            ))}
+          </div>
+
+          {/* Local CRM view toggle (only in local mode) */}
+          {mode==="local" && (
+            <div style={{display:"flex",background:"#F3F4F6",borderRadius:8,padding:3,gap:2}}>
+              {[["table","☰  Table"],["board","⊞  Board"]].map(([v,lbl])=>(
+                <button key={v} onClick={()=>setView(v)}
+                  style={{ padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",
+                           background:view===v?"white":"transparent", color:view===v?"#4F46E5":"#6B7280",
+                           boxShadow:view===v?"0 1px 4px rgba(0,0,0,0.08)":"none" }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Monday.com board selector (when connected) */}
+          {mode==="monday" && mondayBoards && (
+            <select value={mondayBoardId}
+              onChange={e=>{ setMondayBoardId(e.target.value); fetchMondayBoard(e.target.value, mondayToken); }}
+              style={{padding:"6px 10px",borderRadius:7,border:"1px solid #E5E7EB",fontSize:12,fontWeight:600,color:"#374151",background:"white",cursor:"pointer"}}>
+              {mondayBoards.map(b=>(
+                <option key={b.id} value={String(b.id)}>{b.name} ({b.items_count} items)</option>
+              ))}
+            </select>
+          )}
+          {mode==="monday" && mondayToken && (
+            <button onClick={()=>fetchMondayBoard(mondayBoardId, mondayToken)} disabled={mondayLoading}
+              style={{padding:"6px 12px",borderRadius:7,border:"1px solid #E5E7EB",background:"white",fontSize:12,fontWeight:700,color:"#374151",cursor:"pointer"}}>
+              {mondayLoading ? "Loading…" : "↻ Refresh"}
+            </button>
+          )}
+          {mode==="monday" && mondayToken && (
+            <button onClick={()=>{ setMondayToken(""); setMondayBoards(null); setMondayBoard(null); setShowToken(true); }}
+              style={{padding:"6px 12px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",fontSize:12,fontWeight:700,color:"#DC2626",cursor:"pointer"}}>
+              Disconnect
+            </button>
+          )}
+        </div>
+
+        {/* Stats row (local CRM) */}
+        {mode==="local" && (
+          <div style={{display:"flex",gap:0,borderTop:"1px solid #F3F4F6"}}>
+            {[
+              {label:"Total Firms",   value:total,     color:"#4F46E5"},
+              {label:"Contacted",     value:contacted, color:"#D97706"},
+              {label:"Responded",     value:responded, color:"#16A34A"},
+              {label:"Response Rate", value:contacted>0?`${Math.round((responded/contacted)*100)}%`:"—", color:"#7C3AED"},
+              {label:"Closed",        value:closed,    color:"#0EA5E9"},
+            ].map(s=>(
+              <div key={s.label} style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8,borderRight:"1px solid #F3F4F6"}}>
+                <span style={{fontSize:20,fontWeight:800,color:s.color}}>{s.value}</span>
+                <span style={{fontSize:11,color:"#9CA3AF",fontWeight:500}}>{s.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Monday.com stats row (when connected) */}
+        {mode==="monday" && mondayBoard && (
+          <div style={{display:"flex",gap:0,borderTop:"1px solid #F3F4F6"}}>
+            <div style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8,borderRight:"1px solid #F3F4F6"}}>
+              <span style={{fontSize:20,fontWeight:800,color:"#F62E7B"}}>{mondayItems.length}</span>
+              <span style={{fontSize:11,color:"#9CA3AF",fontWeight:500}}>Items</span>
+            </div>
+            <div style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8,borderRight:"1px solid #F3F4F6"}}>
+              <span style={{fontSize:20,fontWeight:800,color:"#4F46E5"}}>{mondayColumns.length}</span>
+              <span style={{fontSize:11,color:"#9CA3AF",fontWeight:500}}>Columns</span>
+            </div>
+            <div style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,color:"#9CA3AF"}}>Board: <b style={{color:"#374151"}}>{mondayBoard.name}</b></span>
+            </div>
+            <div style={{marginLeft:"auto",padding:"8px 18px",display:"flex",alignItems:"center"}}>
+              <a href="https://monday.com" target="_blank" rel="noopener"
+                style={{fontSize:11,fontWeight:700,color:"#F62E7B",textDecoration:"none",display:"flex",alignItems:"center",gap:4}}>
+                Open in Monday.com ↗
+              </a>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Content ── */}
+      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+
+        {/* ══════════════════════════════════════════════════
+            MONDAY.COM MODE
+        ══════════════════════════════════════════════════ */}
+        {mode==="monday" && (
+          <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+
+            {/* Connect panel (shown when not connected) */}
+            {!mondayToken && (
+              <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}>
+                <div style={{maxWidth:520,width:"100%",background:"white",borderRadius:16,padding:36,boxShadow:"0 4px 24px rgba(0,0,0,0.08)",border:"1px solid #F3F4F6",textAlign:"center"}}>
+                  {/* Monday.com logo-style badge */}
+                  <div style={{width:56,height:56,borderRadius:14,background:"linear-gradient(135deg,#F62E7B,#FF6B6B)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 16px",boxShadow:"0 4px 16px rgba(246,46,123,0.3)"}}>
+                    ☰
+                  </div>
+                  <div style={{fontSize:20,fontWeight:800,color:"#111827",marginBottom:8}}>Connect Monday.com</div>
+                  <div style={{fontSize:13,color:"#6B7280",lineHeight:1.6,marginBottom:28}}>
+                    Pull your real board data — items, statuses, and columns — directly into this pipeline view.
+                    Your API token stays local and is never stored.
+                  </div>
+
+                  <div style={{textAlign:"left",marginBottom:16}}>
+                    <label style={{fontSize:11,fontWeight:700,color:"#374151",textTransform:"uppercase",letterSpacing:"0.05em",display:"block",marginBottom:6}}>
+                      Monday.com API Token
+                    </label>
+                    <div style={{display:"flex",gap:8}}>
+                      <input
+                        type={showToken?"text":"password"}
+                        value={tokenInput}
+                        onChange={e=>setTokenInput(e.target.value)}
+                        onKeyDown={e=>e.key==="Enter"&&connectMonday()}
+                        placeholder="Paste your v2 API token…"
+                        style={{flex:1,padding:"10px 14px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,color:"#111827",outline:"none"}}
+                      />
+                      <button onClick={()=>setShowToken(v=>!v)}
+                        style={{padding:"10px 12px",border:"1px solid #E5E7EB",borderRadius:8,background:"white",cursor:"pointer",fontSize:13,color:"#6B7280"}}>
+                        {showToken?"🙈":"👁"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {mondayError && (
+                    <div style={{background:"#FFF5F5",border:"1px solid #FECACA",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#DC2626",marginBottom:16,textAlign:"left"}}>
+                      ⚠ {mondayError}
+                    </div>
+                  )}
+
+                  <button onClick={connectMonday} disabled={mondayLoading||!tokenInput.trim()}
+                    style={{width:"100%",padding:"12px",borderRadius:9,border:"none",background:mondayLoading||!tokenInput.trim()?"#E5E7EB":"linear-gradient(135deg,#F62E7B,#FF6B6B)",color:mondayLoading||!tokenInput.trim()?"#9CA3AF":"white",fontSize:14,fontWeight:700,cursor:mondayLoading||!tokenInput.trim()?"not-allowed":"pointer",transition:"opacity 0.2s"}}>
+                    {mondayLoading ? "Connecting…" : "Connect →"}
+                  </button>
+
+                  <div style={{marginTop:18,fontSize:12,color:"#9CA3AF",lineHeight:1.6}}>
+                    Get your token at{" "}
+                    <a href="https://monday.com/apps/manage/tokens" target="_blank" rel="noopener" style={{color:"#F62E7B",fontWeight:600}}>
+                      monday.com/apps/manage/tokens
+                    </a>
+                    {" "}→ Developer → API v2 token
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Loading state */}
+            {mondayToken && mondayLoading && !mondayBoard && (
+              <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
+                <Spinner size={32} color="#F62E7B"/>
+                <div style={{fontSize:13,color:"#6B7280"}}>Loading your Monday.com board…</div>
+              </div>
+            )}
+
+            {/* Monday.com board table */}
+            {mondayToken && mondayBoard && (
+              <div style={{flex:1,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
+                  <thead style={{position:"sticky",top:0,zIndex:10}}>
+                    <tr>
+                      <th style={{padding:"10px 14px 10px 20px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",width:260}}>
+                        Item Name
+                      </th>
+                      {displayCols.map(col=>(
+                        <th key={col.id} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",whiteSpace:"nowrap"}}>
+                          {col.title}
+                        </th>
+                      ))}
+                      <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB"}}>Updated</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {mondayItems.filter(i=>i.state!=="deleted").map((item,i)=>{
+                      const parsed = parseMondayItem(item, mondayColumns);
+                      const statusText = getMondayStatus(item, mondayColumns);
+                      // Color-code status similar to Monday.com
+                      const statusColors = {
+                        "done":"#00C875", "working on it":"#FDAB3D", "stuck":"#DF2F4A",
+                        "not started":"#C4C4C4", "closed":"#00C875", "in progress":"#FDAB3D",
+                        "prospect":"#7B68EE", "contacted":"#FDAB3D", "responded":"#00C875",
+                      };
+                      const sColor = statusColors[statusText?.toLowerCase()] || "#C4C4C4";
+                      return (
+                        <tr key={item.id}
+                          style={{borderBottom:"1px solid #F3F4F6",background:"white",transition:"background 0.1s",cursor:"default"}}
+                          onMouseEnter={e=>e.currentTarget.style.background="#F9FAFB"}
+                          onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                          {/* Item name with Monday.com color dot */}
+                          <td style={{padding:"10px 14px 10px 20px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:10}}>
+                              <div style={{width:4,height:36,borderRadius:2,background:"#F62E7B",flexShrink:0}}/>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>{item.name}</div>
+                                <div style={{fontSize:10,color:"#9CA3AF",marginTop:1}}>ID {item.id}</div>
+                              </div>
+                            </div>
+                          </td>
+                          {/* Dynamic columns */}
+                          {displayCols.map(col=>{
+                            const cv = (item.column_values||[]).find(c=>c.id===col.id);
+                            const text = cv?.text || "";
+                            const isStatus = col.type==="color"||col.type==="status";
+                            const sc = statusColors[text?.toLowerCase()] || "#C4C4C4";
+                            return (
+                              <td key={col.id} style={{padding:"10px 14px"}}>
+                                {isStatus && text
+                                  ? <span style={{display:"inline-block",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700,background:sc,color:"white",whiteSpace:"nowrap"}}>
+                                      {text}
+                                    </span>
+                                  : <span style={{fontSize:12,color:text?"#374151":"#D1D5DB"}}>{text||"—"}</span>
+                                }
+                              </td>
+                            );
+                          })}
+                          {/* Updated date */}
+                          <td style={{padding:"10px 14px",fontSize:11,color:"#9CA3AF"}}>
+                            {item.updated_at ? new Date(item.updated_at).toLocaleDateString() : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {mondayItems.length===0 && (
+                      <tr><td colSpan={displayCols.length+2} style={{padding:"60px 20px",textAlign:"center",color:"#9CA3AF",fontSize:14}}>
+                        No items in this board.
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════
+            LOCAL CRM MODE
+        ══════════════════════════════════════════════════ */}
+        {mode==="local" && (
+          <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+
+            {/* TABLE VIEW */}
+            {view==="table" && (
+              <div style={{flex:1,overflowY:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+                  <thead style={{position:"sticky",top:0,zIndex:10}}>
+                    <tr>
+                      <SortTh col="name"    label="Firm Name" style={{width:240,paddingLeft:20}}/>
+                      <SortTh col="stage"   label="Stage"     style={{width:130}}/>
+                      <th style={{padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",width:120}}>Email</th>
+                      <SortTh col="rating"  label="★ Rating"  style={{width:95}}/>
+                      <SortTh col="reviews" label="Reviews"   style={{width:95}}/>
+                      <SortTh col="attys"   label="Attorneys" style={{width:95}}/>
+                      <th style={{padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB"}}>Last Activity</th>
+                      <th style={{padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",width:110}}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedFirms.map((firm,i)=>{
+                      const crm   = getCrm(firm);
+                      const stage = CRM_STAGES.find(s=>s.id===crm.stage)||CRM_STAGES[0];
+                      const isAct = selected?.name===firm.name && selected?.city===firm.city;
+                      return (
+                        <tr key={i} onClick={()=>{setSelected(isAct?null:firm);setNoteText(getCrm(firm).notes||"");}}
+                          style={{background:isAct?"#EEF2FF":"white",borderBottom:"1px solid #F3F4F6",cursor:"pointer",transition:"background 0.1s"}}
+                          onMouseEnter={e=>!isAct&&(e.currentTarget.style.background="#F9FAFB")}
+                          onMouseLeave={e=>!isAct&&(e.currentTarget.style.background=isAct?"#EEF2FF":"white")}>
+                          <td style={{padding:"10px 14px 10px 20px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:10}}>
+                              <FirmAvatar name={firm.name} size={30} fontSize={11} bg={isAct?"#4F46E5":"#1E293B"}/>
+                              <div>
+                                <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>{firm.name}</div>
+                                <div style={{fontSize:11,color:"#9CA3AF"}}>{firm.city}, {firm.state}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{padding:"10px 14px"}}>
+                            <span style={{display:"inline-block",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700,background:stage.bg,color:stage.color,border:`1px solid ${stage.border}`}}>
+                              {stage.label}
+                            </span>
+                          </td>
+                          <td style={{padding:"10px 14px"}}>
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <div style={{width:8,height:8,borderRadius:"50%",background:emailDotColor[crm.emailStatus]||"#D1D5DB"}}/>
+                              <span style={{fontSize:11,color:"#6B7280"}}>{emailLabel[crm.emailStatus]||"—"}</span>
+                            </div>
+                          </td>
+                          <td style={{padding:"10px 14px",fontSize:13,fontWeight:700,color:firm.google_stars>=4?"#059669":firm.google_stars>=3?"#D97706":"#6B7280"}}>
+                            {firm.google_stars>0?`★ ${firm.google_stars.toFixed(1)}`:<span style={{color:"#D1D5DB"}}>—</span>}
+                          </td>
+                          <td style={{padding:"10px 14px",fontSize:12,color:"#374151"}}>
+                            {firm.google_review_count>0?firm.google_review_count.toLocaleString():<span style={{color:"#D1D5DB"}}>—</span>}
+                          </td>
+                          <td style={{padding:"10px 14px",fontSize:12,color:"#374151"}}>
+                            {firm.attorney_count||firm.attorney_count_web||firm.attorney_count_est||<span style={{color:"#D1D5DB"}}>—</span>}
+                          </td>
+                          <td style={{padding:"10px 14px",fontSize:11,color:"#6B7280",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                            {crm.activities?.slice(-1)[0]||"—"}
+                          </td>
+                          <td style={{padding:"10px 14px"}} onClick={e=>e.stopPropagation()}>
+                            {stage.id!=="closed" && (
+                              <button onClick={e=>advanceStage(firm,e)}
+                                style={{padding:"4px 8px",borderRadius:5,border:"1px solid #E5E7EB",background:"white",fontSize:10,fontWeight:700,color:"#374151",cursor:"pointer",whiteSpace:"nowrap"}}>
+                                → {CRM_STAGES[Math.min(CRM_STAGES.findIndex(s=>s.id===stage.id)+1,CRM_STAGES.length-1)]?.label}
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {allFirms.length===0 && (
+                      <tr><td colSpan={8} style={{padding:"60px 20px",textAlign:"center",color:"#9CA3AF",fontSize:14}}>
+                        No firms yet — add firms from Discover.
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* BOARD VIEW */}
+            {view==="board" && (
+              <div style={{flex:1,overflowX:"auto",overflowY:"hidden",display:"flex",gap:0}}>
+                {CRM_STAGES.map(stage=>{
+                  const firms = allFirms.filter(f=>getCrm(f).stage===stage.id);
+                  return (
+                    <div key={stage.id} style={{width:220,flexShrink:0,display:"flex",flexDirection:"column",borderRight:"1px solid #E5E7EB",background:"#FAFAFA",height:"100%"}}>
+                      <div style={{padding:"12px 14px 10px",borderBottom:"1px solid #E5E7EB",background:stage.bg,flexShrink:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:6}}>
+                          <span style={{fontSize:12,fontWeight:700,color:stage.color}}>{stage.label}</span>
+                          <span style={{marginLeft:"auto",background:stage.color,color:"white",borderRadius:10,padding:"1px 8px",fontSize:11,fontWeight:800}}>{firms.length}</span>
+                        </div>
+                      </div>
+                      <div style={{flex:1,overflowY:"auto",padding:"10px 8px",display:"flex",flexDirection:"column",gap:8}}>
+                        {firms.length===0&&<div style={{fontSize:11,color:"#D1D5DB",textAlign:"center",marginTop:20}}>No firms</div>}
+                        {firms.map((firm,i)=>{
+                          const crm=getCrm(firm);
+                          const isAct=selected?.name===firm.name&&selected?.city===firm.city;
+                          return (
+                            <div key={i} onClick={()=>{setSelected(isAct?null:firm);setNoteText(getCrm(firm).notes||"");}}
+                              style={{background:"white",border:`1px solid ${isAct?"#6366F1":"#E5E7EB"}`,borderRadius:10,padding:"12px 12px 10px",boxShadow:"0 1px 4px rgba(0,0,0,0.05)",cursor:"pointer"}}>
+                              <div style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8}}>
+                                <FirmAvatar name={firm.name} size={28} fontSize={11} bg={isAct?"#4F46E5":"#111827"}/>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:12,fontWeight:700,color:"#111827",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{firm.name}</div>
+                                  <div style={{fontSize:10,color:"#9CA3AF",marginTop:1}}>{firm.city}, {firm.state}</div>
+                                </div>
+                                <div style={{width:8,height:8,borderRadius:"50%",background:emailDotColor[crm.emailStatus]||"#D1D5DB",flexShrink:0,marginTop:3}} title={emailLabel[crm.emailStatus]}/>
+                              </div>
+                              {firm.google_stars>0&&<div style={{fontSize:10,color:"#F59E0B",marginBottom:6}}>★ {firm.google_stars.toFixed(1)} <span style={{color:"#9CA3AF"}}>({(firm.google_review_count||0).toLocaleString()} reviews)</span></div>}
+                              {crm.notes&&<div style={{fontSize:10,color:"#6B7280",marginBottom:8,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{crm.notes}</div>}
+                              {stage.id!=="closed"&&(
+                                <button onClick={e=>advanceStage(firm,e)}
+                                  style={{width:"100%",padding:"4px 0",borderRadius:5,border:"none",background:"#F3F4F6",color:"#374151",fontSize:10,fontWeight:700,cursor:"pointer",marginTop:4}}>
+                                  → {CRM_STAGES[Math.min(CRM_STAGES.findIndex(s=>s.id===stage.id)+1,CRM_STAGES.length-1)]?.label}
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {view==="workflows" && (
+              <div style={{flex:1,overflowY:"auto",padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
+
+                {/* Auto-Enrich on Save */}
+                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid #E5E7EB",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                    <div style={{width:40,height:40,borderRadius:10,background:"#F0FDF4",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:800,color:"#111827",marginBottom:3}}>Auto-Enrich on Save</div>
+                      <div style={{fontSize:12,color:"#6B7280",lineHeight:1.55}}>
+                        When you save a firm to the watchlist, LEA automatically fetches its Google rating, LinkedIn headcount, court activity, and estimated revenue — no manual clicks needed.
+                      </div>
+                      <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap"}}>
+                        {["Google Rating","LinkedIn Data","Court Activity","Revenue Estimate","Website Discovery"].map(item=>(
+                          <span key={item} style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:"#F0FDF4",color:"#059669",border:"1px solid #BBF7D0"}}>{"✓"} {item}</span>
+                        ))}
+                      </div>
+                      <div style={{marginTop:10,fontSize:11,color:"#6B7280",background:"#F9FAFB",borderRadius:7,padding:"8px 12px",border:"1px solid #F3F4F6"}}>
+                        <strong style={{color:"#374151"}}>Status:</strong> Active — runs automatically each time a firm is saved to the watchlist
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Investment Score Engine */}
+                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid #E5E7EB",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                    <div style={{width:40,height:40,borderRadius:10,background:"#EFF6FF",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:800,color:"#111827",marginBottom:3}}>Investment Score Engine</div>
+                      <div style={{fontSize:12,color:"#6B7280",lineHeight:1.55}}>
+                        After AI website analysis, LEA automatically computes a 0-100 investment score using 5 weighted signals (client volume, reputation, scale, market activity, acquisition readiness) synthesised by an LLM.
+                      </div>
+                      <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:8}}>
+                        {[["Client Volume","25%"],["Reputation","20%"],["Scale","20%"],["Market Activity","15%"],["Acq. Readiness","15%"],["LEA Bonus","5%"]].map(([n,w])=>(
+                          <div key={n} style={{background:"#F8FAFC",borderRadius:7,padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                            <span style={{fontSize:11,color:"#374151",fontWeight:600}}>{n}</span>
+                            <span style={{fontSize:11,fontWeight:800,color:"#2563EB"}}>{w}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Weekly Market Digest */}
+                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid #E5E7EB",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
+                    <div style={{width:40,height:40,borderRadius:10,background:"#FEF3C7",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    </div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:14,fontWeight:800,color:"#111827",marginBottom:3}}>Weekly Market Digest</div>
+                      <div style={{fontSize:12,color:"#6B7280",lineHeight:1.55,marginBottom:10}}>
+                        Scans the top LEA target markets every week, ranks firms by investment score, and surfaces the highest-priority opportunities for the team. Run it manually from the Heat Map tab, or trigger it here.
+                      </div>
+                      <WeeklyDigestTrigger/>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* DETAIL PANEL */}
+            {selected && mode==="local" && (()=>{
+              const crm = getCrm(selected);
+              const key = `${selected.name}|${selected.city}`;
+              const news = newsMap[key];
+              return (
+                <div style={{width:350,flexShrink:0,borderLeft:"1px solid #E5E7EB",display:"flex",flexDirection:"column",background:"white",overflow:"hidden",animation:"slideRight 0.18s ease"}}>
+                  <div style={{padding:"16px 18px",borderBottom:"1px solid #F3F4F6",display:"flex",alignItems:"center",gap:10,flexShrink:0,background:"#FAFBFC"}}>
+                    <FirmAvatar name={selected.name} size={36}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selected.name}</div>
+                      <div style={{fontSize:11,color:"#6B7280"}}>{selected.city}, {selected.state}</div>
+                    </div>
+                    <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#9CA3AF",fontSize:22,lineHeight:1,padding:"2px 4px"}}>×</button>
+                  </div>
+                  <div style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
+                    {selected.google_stars>0&&(
+                      <div style={{background:"#FFFBEB",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
+                        <span style={{fontSize:22,fontWeight:900,color:"#D97706"}}>★ {selected.google_stars.toFixed(1)}</span>
+                        <div>
+                          <div style={{fontSize:12,fontWeight:700,color:"#92400E"}}>{(selected.google_review_count||0).toLocaleString()} Google reviews</div>
+                          <div style={{fontSize:11,color:"#B45309"}}>via {selected.rating_source||"Google"}</div>
+                        </div>
+                      </div>
+                    )}
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Pipeline Stage</div>
+                      <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                        {CRM_STAGES.map(s=>(
+                          <button key={s.id} onClick={()=>{
+                            const activity=`${new Date().toLocaleDateString()} — Moved to ${s.label}`;
+                            updateCrm(selected,{stage:s.id,activities:[...(crm.activities||[]),activity]});
+                          }} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${crm.stage===s.id?s.color:s.border}`,background:crm.stage===s.id?s.bg:"white",color:crm.stage===s.id?s.color:"#6B7280",fontSize:11,fontWeight:crm.stage===s.id?700:500,cursor:"pointer"}}>
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Email Status</div>
+                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                        {[["not_sent","Not Sent","#6B7280"],["sent","Sent","#D97706"],["responded","Responded","#16A34A"],["no_response","No Response","#DC2626"]].map(([st,lb,co])=>(
+                          <button key={st} onClick={()=>setEmailStatus(selected,st)} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${crm.emailStatus===st?co:"#E5E7EB"}`,background:crm.emailStatus===st?co:"white",color:crm.emailStatus===st?"white":"#6B7280",fontSize:11,fontWeight:crm.emailStatus===st?700:500,cursor:"pointer"}}>
+                            {lb}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Notes</div>
+                      <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} onBlur={()=>updateCrm(selected,{notes:noteText})}
+                        placeholder="Add notes about this firm, conversations, next steps…"
+                        style={{width:"100%",minHeight:90,padding:"10px 12px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,lineHeight:1.6,resize:"vertical",color:"#111827",outline:"none",boxSizing:"border-box"}}/>
+                    </div>
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em"}}>Recent News</div>
+                        <button onClick={()=>loadNews(selected)} style={{marginLeft:"auto",padding:"3px 10px",borderRadius:5,border:"1px solid #E5E7EB",background:"white",fontSize:10,fontWeight:700,color:"#374151",cursor:"pointer"}}>
+                          {loadingNews===key?"Loading…":news?"Refresh":"Load News"}
+                        </button>
+                      </div>
+                      {news&&news.length===0&&<div style={{fontSize:12,color:"#9CA3AF"}}>No recent articles found.</div>}
+                      {news&&news.length>0&&(
+                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                          {news.slice(0,5).map((a,i)=>(
+                            <a key={i} href={a.url} target="_blank" rel="noopener" style={{display:"block",padding:"8px 10px",background:"#F8F9FB",borderRadius:7,border:"1px solid #E5E7EB",textDecoration:"none"}}>
+                              <div style={{fontSize:12,fontWeight:600,color:"#111827",marginBottom:3,lineHeight:1.4}}>{a.title}</div>
+                              <div style={{fontSize:10,color:"#6B7280"}}>{a.source} · {a.published_at?.slice(0,10)||"recent"}</div>
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {crm.activities?.length>0&&(
+                      <div>
+                        <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Activity Log</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:3}}>
+                          {[...crm.activities].reverse().map((a,i)=>(
+                            <div key={i} style={{fontSize:11,color:"#6B7280",padding:"4px 0",borderBottom:"1px solid #F9FAFB"}}>{a}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{paddingTop:8,borderTop:"1px solid #F3F4F6"}}>
+                      <OutreachPanel firm={selected} enriched={null}/>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ── User Picker Modal ─────────────────────────────────────────────────────────
+function UserPickerModal({ onSelect }) {
+  const [users, setUsers]   = useState([]);
+  const [picked, setPicked] = useState("");
+
+  useEffect(() => {
+    fetch("/api/users").then(r=>r.json()).then(d => setUsers(d.users||[])).catch(()=>{});
+  }, []);
+
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:10000}}>
+      <div style={{background:"white",borderRadius:16,padding:"32px 36px",width:380,boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:6}}>
+          <div style={{width:36,height:36,borderRadius:9,background:"#111827",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+          </div>
+          <div>
+            <div style={{fontSize:17,fontWeight:900,color:"#111827"}}>LEA Investment Intelligence</div>
+            <div style={{fontSize:11,color:"#9CA3AF"}}>Select your name to continue</div>
+          </div>
+        </div>
+        <div style={{height:1,background:"#F3F4F6",margin:"18px 0"}}/>
+        <div style={{display:"flex",flexDirection:"column",gap:7}}>
+          {users.map(u => (
+            <button key={u} onClick={()=>setPicked(u)}
+              style={{padding:"11px 16px",borderRadius:9,border:"2px solid",textAlign:"left",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.12s",
+                borderColor: picked===u ? "#111827" : "#E5E7EB",
+                background:  picked===u ? "#111827" : "white",
+                color:       picked===u ? "white"   : "#374151"}}>
+              {u}
+            </button>
+          ))}
+        </div>
+        <button onClick={()=>{ if(picked) onSelect(picked); }}
+          disabled={!picked}
+          style={{marginTop:18,width:"100%",padding:"12px 0",borderRadius:9,border:"none",background:picked?"#111827":"#E5E7EB",color:picked?"white":"#9CA3AF",fontSize:14,fontWeight:800,cursor:picked?"pointer":"not-allowed",transition:"all 0.15s"}}>
+          Continue as {picked||"…"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── App ────────────────────────────────────────────────────────────────────────
+function App() {
+  const [tab,         setTab]         = useState("discover");
+  const [watchlist,   setWatchlist]   = useState([]);
+  const [crmData,     setCrmData]     = useState({});
+  const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("lea_username") || "");
+  const [userLoading, setUserLoading] = useState(false);
+  const saveTimerRef = React.useRef(null);
+
+  // ── User login: load data from backend ──────────────────────────────────────
+  async function handleUserSelect(username) {
+    localStorage.setItem("lea_username", username);
+    setCurrentUser(username);
+    setUserLoading(true);
+    try {
+      const resp = await fetch("/api/user/" + encodeURIComponent(username) + "/load");
+      const data = await resp.json();
+      if (data.watchlist && data.watchlist.length > 0) setWatchlist(data.watchlist);
+      if (data.crm_data && Object.keys(data.crm_data).length > 0) setCrmData(data.crm_data);
+    } catch(e) { console.error("load user data failed", e); }
+    finally { setUserLoading(false); }
+  }
+
+  // Auto-save watchlist + CRM to backend whenever they change (debounced 2s)
+  React.useEffect(() => {
+    if (!currentUser) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      fetch("/api/user/save", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({username: currentUser, watchlist, crm_data: crmData})
+      }).catch(e => console.error("auto-save failed", e));
+    }, 2000);
+    return () => clearTimeout(saveTimerRef.current);
+  }, [watchlist, crmData, currentUser]);
+
+  // Discover state lifted here so results persist across tab switches
+  const [discoverMode,      setDiscoverMode]      = useState("search");
+  const [discoverForm,      setDiscoverForm]      = useState({city:"",state:"FL",practice_area:"personal injury",max_results:60});
+  const [discoverCForm,     setDiscoverCForm]     = useState({city:"",state:"FL",practice_area:"personal injury",days_back:180});
+  const [discoverResults,   setDiscoverResults]   = useState(null);
+  const [discoverAnalytics, setDiscoverAnalytics] = useState(null);
+  const [discoverSelected,  setDiscoverSelected]  = useState(null);
+  const [discoverError,     setDiscoverError]     = useState("");
+  const [enrichCache,   setEnrichCache]   = useState({});
+  const [notification,  setNotification]  = useState(null);
+
+  function showNotification(msg, type) {
+    setNotification({msg, type: type||"success"});
+    setTimeout(() => setNotification(null), 4000);
+  }
+
+  async function autoEnrich(firm) {
+    const key = firm.name + "|" + firm.city;
+    if (enrichCache[key]) return;
+    try {
+      const resp = await fetch("/api/discover/enrich", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({name:firm.name, website:firm.website||"", city:firm.city, state:firm.state||""})
+      });
+      const data = await resp.json();
+      setEnrichCache(c => ({...c, [key]: data}));
+      setWatchlist(w => w.map(f => (f.name===firm.name&&f.city===firm.city) ? {...f, ...data, source:f.source} : f));
+      showNotification(firm.name + " enriched automatically");
+    } catch(e) { console.error("auto-enrich error", e); }
+  }
+
+  function onToggleWatchlist(firm) {
+    const key = f => `${f.name}|${f.city}`;
+    const exists = watchlist.some(w => key(w)===key(firm));
+    if (exists) {
+      setWatchlist(w => w.filter(f => key(f)!==key(firm)));
+    } else {
+      setWatchlist(w => [...w, firm]);
+      // Set initial CRM stage
+      setCrmData(d => ({ ...d, [key(firm)]: { stage:"prospect", emailStatus:"not_sent", notes:"", activities:[`${new Date().toLocaleDateString()} — Added to watchlist`], dateAdded:new Date().toLocaleDateString() } }));
+      autoEnrich(firm);
+      showNotification("Saved! Auto-enriching " + firm.name + "…", "info");
+    }
+  }
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden"}}>
+      {!currentUser && <UserPickerModal onSelect={handleUserSelect}/>}
+      {userLoading && (
+        <div style={{position:"fixed",inset:0,background:"rgba(255,255,255,0.8)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:9999,flexDirection:"column",gap:12}}>
+          <Spinner color="#111827"/>
+          <div style={{fontSize:13,fontWeight:700,color:"#374151"}}>Loading your workspace…</div>
+        </div>
+      )}
+      <Header tab={tab} setTab={setTab} watchlistCount={watchlist.length} currentUser={currentUser} onSwitchUser={()=>{ localStorage.removeItem("lea_username"); setCurrentUser(""); setWatchlist([]); setCrmData({}); }}/>
+      {notification && (
+        <div style={{position:"fixed",bottom:20,right:20,zIndex:9999,
+          background: notification.type==="info" ? "#1D4ED8" : notification.type==="error" ? "#DC2626" : "#059669",
+          color:"white",borderRadius:10,padding:"11px 18px",boxShadow:"0 4px 20px rgba(0,0,0,0.2)",
+          fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:10,maxWidth:320,
+          animation:"slideRight 0.25s ease"}}>
+          <span>{notification.type==="info"?"⟳":notification.type==="error"?"✕":"✓"}</span>
+          <span style={{flex:1}}>{notification.msg}</span>
+          <button onClick={()=>setNotification(null)} style={{background:"rgba(255,255,255,0.2)",border:"none",borderRadius:5,color:"white",padding:"2px 7px",cursor:"pointer",fontSize:11,fontWeight:800}}>×</button>
+        </div>
+      )}
+      <div style={{flex:1,display:"flex",overflow:"hidden",background:"#F7F8FA"}}>
+        {tab==="discover"  && <DiscoverPage
+          watchlist={watchlist} onToggleWatchlist={onToggleWatchlist} currentUser={currentUser}
+          mode={discoverMode}           setMode={setDiscoverMode}
+          form={discoverForm}           setForm={setDiscoverForm}
+          cForm={discoverCForm}         setCForm={setDiscoverCForm}
+          results={discoverResults}     setResults={setDiscoverResults}
+          analytics={discoverAnalytics} setAnalytics={setDiscoverAnalytics}
+          selected={discoverSelected}   setSelected={setDiscoverSelected}
+          error={discoverError}         setError={setDiscoverError}
+        />}
+        {tab==="watchlist" && <WatchlistPage watchlist={watchlist} onToggleWatchlist={onToggleWatchlist} onGoToManage={()=>setTab("manage")} currentUser={currentUser}/>}
+        {tab==="manage"    && <ManagePage    watchlist={watchlist} crmData={crmData} setCrmData={setCrmData}/>}
+        {tab==="heatmap"  && <HeatMapPage   watchlist={watchlist} onGoToDiscover={()=>setTab("discover")} onSelectFirm={firm=>{ setDiscoverResults({results:[firm]}); setDiscoverSelected(firm); setTab("discover"); }}/>}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
