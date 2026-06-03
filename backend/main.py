@@ -172,7 +172,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-FRONTEND_PATH = Path(__file__).parent.parent / "frontend" / "index.html"
+# Frontend: check same-dir frontend/ first (Railway), then parent dir (local dev)
+_fe_same = Path(__file__).parent / "frontend" / "index.html"
+_fe_parent = Path(__file__).parent.parent / "frontend" / "index.html"
+FRONTEND_PATH = _fe_same if _fe_same.exists() else _fe_parent
 
 
 # ──────────────────────────────────────────────
