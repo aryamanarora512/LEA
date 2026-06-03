@@ -1519,7 +1519,11 @@ async def link_to_sheet(req: LinkToSheetRequest):
 
         # Find next available ID
         all_vals = ws.col_values(2)  # column B = Firm Name
-        next_id  = max(1, len([v for v in all_vals[2:] if v.strip()]) + 1)  # skip header rows
+        # Count only rows with actual firm names (skip header rows 1 & 2)
+        filled = [v for v in all_vals[2:] if v.strip()]
+        next_id  = max(1, len(filled) + 1)
+        # Target the specific row (row 1=title, row 2=header, row 3+ = data)
+        target_row = len(filled) + 3  # +1 for title, +1 for header, +1 for next
 
         # Revenue label → numeric
         rev_label = firm.get("revenue_label", "") or ""
@@ -1565,7 +1569,7 @@ async def link_to_sheet(req: LinkToSheetRequest):
             f"Added via LEA app by {req.username}",                      # T: Notes
         ]
 
-        ws.append_row(row, value_input_option="USER_ENTERED")
+        ws.update(f'A{target_row}', [row], value_input_option='USER_ENTERED')
 
         # Log to local DB
         conn = get_db()
