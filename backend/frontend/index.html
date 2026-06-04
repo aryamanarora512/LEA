@@ -1227,6 +1227,7 @@ function DiscoverPage({ watchlist, onToggleWatchlist, currentUser,
                 <span style={{fontWeight:700,color:"#111827"}}>{displayFirms.length}</span>
                 <span>firms · {results.practice_area} · {results.city}, {results.state}</span>
                 {totalPages>1 && <span style={{color:"#9CA3AF"}}>· page {discoverPage+1} of {totalPages}</span>}
+                {results.cached && <span style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:4,background:"#F0FDF4",color:"#16A34A",marginLeft:4}}>⚡ Cached</span>}
                 <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
                   <span style={{fontSize:11,color:"#9CA3AF"}}>Sort:</span>
                   <select value={discoverSort} onChange={e=>{setDiscoverSort(e.target.value);setDiscoverPage(0);}}

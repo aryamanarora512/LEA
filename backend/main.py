@@ -151,6 +151,12 @@ def init_db():
         sheet_row    INTEGER,
         linked_at    TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS search_cache (
+        cache_key    TEXT PRIMARY KEY,
+        results_json TEXT NOT NULL,
+        created_at   TEXT DEFAULT (datetime('now')),
+        hit_count    INTEGER DEFAULT 0
+    );
     """)
     conn.commit()
     conn.close()
@@ -675,7 +681,43 @@ async def discover_endpoint(req: DiscoverRequest):
     Discover new law firm acquisition candidates in a given market.
     Sources: Google Places (if key set), SerpAPI (if key set), Avvo, Martindale.
     Cross-checks results against existing firms in DB and flags duplicates.
+    Results are cached for 7 days — repeat searches are instant.
     """
+    import json as _json
+    import hashlib
+
+    # Build cache key from search params
+    cache_key = hashlib.md5(
+        f"{req.city.strip().lower()}|{req.state.strip().lower()}|{req.practice_area.strip().lower()}|{req.max_results}".encode()
+    ).hexdigest()
+
+    CACHE_TTL_HOURS = 7 * 24  # 7 days
+
+    # Check cache first
+    conn = get_db()
+    cached = conn.execute(
+        "SELECT results_json, created_at FROM search_cache WHERE cache_key=? AND created_at > datetime('now', ?)",
+        (cache_key, f"-{CACHE_TTL_HOURS} hours")
+    ).fetchone()
+
+    if cached:
+        # Cache hit — update hit count and return instantly
+        conn.execute("UPDATE search_cache SET hit_count = hit_count + 1 WHERE cache_key=?", (cache_key,))
+        conn.commit()
+        result = _json.loads(cached["results_json"])
+        result["cached"] = True
+        # Still flag pipeline status (this is live data)
+        existing_names = set(
+            row[0].lower() for row in conn.execute("SELECT name FROM firms").fetchall()
+        )
+        conn.close()
+        for firm in result["results"]:
+            norm = firm["name"].lower()
+            firm["already_in_pipeline"] = any(norm in ex or ex in norm for ex in existing_names)
+        return result
+    conn.close()
+
+    # Cache miss — call the real API
     result = await discover_firms(
         city=req.city,
         state=req.state,
@@ -688,7 +730,6 @@ async def discover_endpoint(req: DiscoverRequest):
     existing_names = set(
         row[0].lower() for row in conn.execute("SELECT name FROM firms").fetchall()
     )
-    conn.close()
 
     for firm in result["results"]:
         norm = firm["name"].lower()
@@ -696,10 +737,43 @@ async def discover_endpoint(req: DiscoverRequest):
             norm in ex or ex in norm for ex in existing_names
         )
 
+    # Store in cache (only cache successful results with firms)
+    if result.get("results"):
+        result["cached"] = False
+        conn.execute(
+            "INSERT OR REPLACE INTO search_cache (cache_key, results_json, created_at, hit_count) VALUES (?,?,datetime('now'),0)",
+            (cache_key, _json.dumps(result))
+        )
+    conn.commit()
+    conn.close()
+
     return result
 
 
 
+
+@app.get("/api/cache/stats")
+async def cache_stats():
+    """Return search cache statistics."""
+    import json as _json
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT cache_key, created_at, hit_count FROM search_cache ORDER BY hit_count DESC"
+    ).fetchall()
+    total = len(rows)
+    total_hits = sum(r["hit_count"] for r in rows)
+    conn.close()
+    return {"total_cached_searches": total, "total_cache_hits": total_hits,
+            "ttl_days": 7, "note": "Cache saves ~3s per repeat search"}
+
+@app.delete("/api/cache/clear")
+async def clear_cache():
+    """Clear all cached search results (admin use)."""
+    conn = get_db()
+    conn.execute("DELETE FROM search_cache")
+    conn.commit()
+    conn.close()
+    return {"ok": True, "message": "Search cache cleared"}
 
 # ─────────────────────────────────────────────────────────────
 # OUTREACH ENDPOINTS
