@@ -404,8 +404,15 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
           method:"POST", headers:{"Content-Type":"application/json"},
           body: JSON.stringify({firm_name:firm.name, city:firm.city, state:firm.state})
         }).then(r=>r.json()).then(wd=>{
-          if (wd.found && wd.website) setFoundWebsite(wd.website);
+          if (wd.found && wd.website) {
+            setFoundWebsite(wd.website);
+            // Auto-trigger AI once website is found
+            autoRunAI(wd.website);
+          }
         }).catch(()=>{}).finally(()=>setWebsiteSearching(false));
+      } else {
+        // Website already known — auto-trigger AI immediately
+        autoRunAI(firm.website || d?.website || "");
       }
     }).catch(()=>setLoading(false));
   },[firm.name, firm.city]);
@@ -417,6 +424,26 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
     const d = await resp.json();
     if (d.id) { setPipelineId(d.id); return d.id; }
     return null;
+  }
+
+  // Auto-run AI silently when firm loads (no error UI, just fills in if successful)
+  async function autoRunAI(websiteUrl) {
+    if (!websiteUrl) return;
+    try {
+      const resp = await fetch("/api/ai-analyze", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          firm_name: firm.name, city: firm.city, state: firm.state||"",
+          website: websiteUrl,
+          google_review_snippets:[],
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && !data.error) {
+        setInsights(data);
+        scoreThisFirm(data);
+      }
+    } catch(e) { /* silent fail — user can still click manually */ }
   }
 
   async function runAIAnalysis() {
@@ -535,7 +562,7 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
               background:sheetLinked?"rgba(16,185,129,0.2)":sheetLinking?"rgba(255,255,255,0.08)":"rgba(52,211,153,0.15)",
               color:sheetLinked?"#6EE7B7":sheetLinking?"rgba(255,255,255,0.35)":"#6EE7B7",
               fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,border:"1px solid rgba(52,211,153,0.3)"}}>
-            {sheetLinking ? <><Spinner size={11} color="#6EE7B7"/>Linking…</> : sheetLinked ? "✓ Added to Sheet" : "📊 Link to Sheet"}
+            {sheetLinking ? <><Spinner size={11} color="#6EE7B7"/>Linking…</> : sheetLinked ? "✓ Added to Sheet" : "Link to Sheet"}
           </button>
         </div>
         <div style={{display:"flex",gap:10}}>
@@ -806,7 +833,7 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
                         value={manualWebsite || (insights ? "" : effectiveWebsite)}
                         onChange={e=>{ setManualWebsite(e.target.value); setInsights(null); setAiError(""); }}
                         onKeyDown={e=>{ if(e.key==="Enter" && (manualWebsite.trim()||effectiveWebsite)) runAIAnalysis(); }}
-                        placeholder={effectiveWebsite || "https://firmwebsite.com"}
+                        placeholder={websiteSearching ? "Searching for website…" : effectiveWebsite || "Paste website URL here"}
                         style={{
                           flex:1, padding:"8px 11px", borderRadius:7,
                           border:"1px solid rgba(255,255,255,0.15)",
