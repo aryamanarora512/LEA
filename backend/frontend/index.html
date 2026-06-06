@@ -615,23 +615,49 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
                       </button>
                     )}
                   </div>
-                  {insights && (
-                    <div style={{borderTop:"1px solid #F3F4F6",paddingTop:10,display:"flex",flexDirection:"column",gap:7}}>
-                      {[
-                        insights.community_focus,
-                        (insights.unique_differentiators||[])[0],
-                        (insights.notable_results||[])[0],
-                        (insights.acquisition_signals||[])[0]||(insights.outreach_hooks||[])[0]
-                      ].filter(Boolean).slice(0,4).map(function(b,i){
-                        return (
-                          <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
-                            <span style={{flexShrink:0,width:18,height:18,borderRadius:"50%",background:"#EEF2FF",color:"#4F46E5",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",marginTop:1}}>{i+1}</span>
-                            <span style={{fontSize:12,color:"#374151",lineHeight:1.5}}>{b}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                  {/* Verified facts strip — only real data from the DB */}
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10,marginTop:4}}>
+                    {firm.google_stars>0 && (
+                      <span style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"#FFFBEB",color:"#92400E",border:"1px solid #FDE68A",display:"inline-flex",alignItems:"center",gap:4}}>
+                        <span style={{color:"#F59E0B"}}>★</span> {firm.google_stars.toFixed(1)} ({(firm.google_review_count||0).toLocaleString()} reviews)
+                      </span>
+                    )}
+                    {firm.active_cases>0 && (
+                      <span style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"#EFF6FF",color:"#1D4ED8",border:"1px solid #BFDBFE"}}>
+                        {firm.active_cases} federal cases
+                      </span>
+                    )}
+                    {insights && insights.attorney_count_website>0 && (
+                      <span style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"#F0FDF4",color:"#15803D",border:"1px solid #BBF7D0"}}>
+                        {insights.attorney_count_website} attorneys (website)
+                      </span>
+                    )}
+                    {insights && insights.website_language && insights.website_language!=="English" && (
+                      <span style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:20,background:"#F5F3FF",color:"#6D28D9",border:"1px solid #DDD6FE"}}>
+                        {insights.website_language} site
+                      </span>
+                    )}
+                  </div>
+                  {insights && (function(){
+                    var bullets = [];
+                    (insights.unique_differentiators||[]).forEach(function(d){ if(bullets.length<4) bullets.push(d); });
+                    (insights.notable_results||[]).forEach(function(r){ if(bullets.length<4) bullets.push(r); });
+                    if(insights.community_focus && bullets.length<4) bullets.push(insights.community_focus);
+                    (insights.acquisition_signals||[]).forEach(function(s){ if(bullets.length<4) bullets.push(s); });
+                    if(!bullets.length) return null;
+                    return (
+                      <div style={{borderTop:"1px solid #F3F4F6",paddingTop:10,display:"flex",flexDirection:"column",gap:7}}>
+                        {bullets.map(function(b,i){
+                          return (
+                            <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                              <span style={{flexShrink:0,width:18,height:18,borderRadius:"50%",background:"#EEF2FF",color:"#4F46E5",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",marginTop:2}}>{i+1}</span>
+                              <span style={{fontSize:12,color:"#374151",lineHeight:1.5}}>{b}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                   {aiError && (
                     <div style={{marginTop:8,background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#DC2626"}}>
                       {aiError}
