@@ -1469,8 +1469,7 @@ async def digest_endpoint(req: DigestRequest):
 # ── User List ─────────────────────────────────────────────────────────────────
 
 LEA_USERS = [
-    "Zach Harris", "Aryaman Arora", "User 3", "User 4", "User 5",
-    "User 6", "User 7", "User 8", "User 9", "User 10",
+    "Admin", "LEA Investor",
 ]
 
 @app.get("/api/users")
