@@ -2553,20 +2553,42 @@ async def discover_firms(city: str, state: str,
     sources_used.extend(["DuckDuckGo", "Yellow Pages", "CourtListener"])
 
     gathered = await _asyncio.gather(*tasks.values(), return_exceptions=True)
-    all_results = list(lea_firms)   # LEA firms go first — highest priority
+    # Add rated sources first so dedup keeps their ratings/website data
+    # LEA Research firms are merged in after — the sort still puts them first
+    rated_results = []
+    other_results = []
     for key, res in zip(tasks.keys(), gathered):
         if isinstance(res, Exception):
             log.warning(f"Discovery source '{key}' failed: {res}")
         elif isinstance(res, list):
-            all_results.extend(res)
+            if key in ("serp", "outscraper", "google"):
+                rated_results.extend(res)
+            else:
+                other_results.extend(res)
+    all_results = rated_results + other_results + list(lea_firms)
 
-    # Deduplicate by normalised name
-    seen, unique = set(), []
+    # Deduplicate by normalised name — merge data, preferring rated sources
+    seen = {}  # norm -> index in unique
+    unique = []
     for r in all_results:
         norm = re.sub(r"[^a-z0-9]", "", r["name"].lower())
-        if norm and len(norm) > 3 and norm not in seen:
-            seen.add(norm)
-            unique.append(r)
+        if not norm or len(norm) <= 3:
+            continue
+        if norm not in seen:
+            seen[norm] = len(unique)
+            unique.append(dict(r))
+        else:
+            # Merge: enrich existing entry with any data the new source has
+            existing = unique[seen[norm]]
+            # Prefer SerpAPI/Outscraper ratings over LEA Research (which has none)
+            if not existing.get("google_stars") and r.get("google_stars"):
+                existing["google_stars"] = r["google_stars"]
+                existing["google_review_count"] = r.get("google_review_count", 0)
+                existing["rating_source"] = r.get("rating_source", "Google")
+            if not existing.get("website") and r.get("website"):
+                existing["website"] = r["website"]
+            if not existing.get("phone") and r.get("phone"):
+                existing["phone"] = r["phone"]
 
     # Sort: state bar first (authoritative), then paid APIs, then free sources
     source_priority = {
