@@ -1129,33 +1129,24 @@ function DiscoverPage({ watchlist, onToggleWatchlist, currentUser,
   return (
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       {/* Search bar */}
-      <div style={{background:"linear-gradient(135deg,#111827,#1e3a5f)",padding:"10px 24px 10px",flexShrink:0}}>
-
-        <div style={{display:"flex",gap:5,marginBottom:10}}>
-          {[["search","Firm Discovery"],["court","Court Analytics"]].map(([m,lbl])=>(
-            <button key={m} onClick={()=>{setMode(m);setSelected(null);}} style={{padding:"4px 11px",borderRadius:6,border:"none",cursor:"pointer",background:mode===m?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.1)",color:mode===m?"#111827":"rgba(255,255,255,0.65)",fontSize:11,fontWeight:mode===m?700:400,transition:"all 0.12s"}}>
-              {lbl}
-            </button>
-          ))}
-        </div>
+      <div style={{background:"linear-gradient(135deg,#111827,#1e3a5f)",padding:"8px 24px",flexShrink:0}}>
         {mode==="search" && (
           <form onSubmit={doSearch}>
-            <div style={{display:"grid",gridTemplateColumns:"1.5fr 80px 1.2fr 90px 110px",gap:10,alignItems:"flex-end"}}>
-              {[["City *","city","text","e.g. New York..."],["State","state","select"],["Practice Area","practice_area","select"],["Max","max_results","select"]].map(([lbl,key,type,ph])=>(
+            <div style={{display:"grid",gridTemplateColumns:"1.5fr 80px 1fr 110px",gap:10,alignItems:"flex-end"}}>
+              {[["City *","city","text","e.g. New York..."],["State","state","select"],["Practice Area","practice_area","select"]].map(([lbl,key,type,ph])=>(
                 <div key={key}>
-                  <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.07em",display:"block",marginBottom:5}}>{lbl}</label>
+                  <label style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.07em",display:"block",marginBottom:4}}>{lbl}</label>
                   {type==="text"
                     ? <input required placeholder={ph} value={form[key]} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))} style={inp({})}/>
                     : <select value={form[key]} onChange={e=>setForm(p=>({...p,[key]:e.target.value}))} style={inp({cursor:"pointer"})}>
                         {key==="state"&&US_STATES.map(s=><option key={s} value={s} style={{background:"#111827"}}>{s}</option>)}
                         {key==="practice_area"&&PRACTICE_OPTIONS.map(p=><option key={p} value={p} style={{background:"#111827"}}>{p.charAt(0).toUpperCase()+p.slice(1)}</option>)}
-                        {key==="max_results"&&[[20,"20 firms"],[40,"40 firms"],[60,"60 firms"]].map(([n,l])=><option key={n} value={n} style={{background:"#111827"}}>{l}</option>)}
                       </select>
                   }
                 </div>
               ))}
               <div>
-                <label style={{fontSize:10,color:"transparent",display:"block",marginBottom:5}}>_</label>
+                <label style={{fontSize:10,color:"transparent",display:"block",marginBottom:4}}>_</label>
                 <button type="submit" disabled={loading} style={{width:"100%",padding:"8px 0",borderRadius:8,border:"none",background:loading?"rgba(255,255,255,0.15)":"white",color:loading?"rgba(255,255,255,0.4)":"#111827",fontSize:13,fontWeight:800,cursor:loading?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
                   {loading?<><Spinner size={11} color="#374151"/> ...</>:"Search"}
                 </button>
