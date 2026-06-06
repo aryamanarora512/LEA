@@ -532,25 +532,35 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
         </div>
         <div style={{display:"flex",gap:10}}>
           <button onClick={()=>{
-            var personal="";
+            var bullets=[];
             if(firm.google_stars>0){
-              personal+="Your "+firm.google_stars.toFixed(1)+"-star rating across "+(firm.google_review_count||0).toLocaleString()+" Google reviews is a testament to your firm's exceptional client service. ";
+              bullets.push(firm.google_stars.toFixed(1)+"-star rating across "+(firm.google_review_count||0).toLocaleString()+" Google reviews");
             }
             if(insights&&(insights.unique_differentiators||[]).length>0){
-              personal+=insights.unique_differentiators[0]+". ";
+              bullets.push(insights.unique_differentiators[0]);
+            }
+            if(insights&&(insights.unique_differentiators||[]).length>1){
+              bullets.push(insights.unique_differentiators[1]);
             }
             if(insights&&(insights.notable_results||[]).length>0){
-              personal+=insights.notable_results[0]+". ";
+              bullets.push(insights.notable_results[0]);
             }
-            if(insights&&insights.community_focus&&personal.length<200){
-              personal+=insights.community_focus+".";
+            if(insights&&insights.community_focus){
+              bullets.push(insights.community_focus);
             }
-            if(!personal.trim()){
-              personal="Your firm's strong reputation and client focus caught our attention, and we believe you would be a great partner.";
+            var bulletBlock="";
+            if(bullets.length>0){
+              bulletBlock=" [Some information we noted about your firm:\n\n";
+              for(var i=0;i<bullets.length;i++){
+                bulletBlock+=(i+1)+". "+bullets[i]+"\n";
+              }
+              bulletBlock+="]";
+            } else {
+              bulletBlock=" [Your firm's strong reputation and client focus in the market stood out to us.]";
             }
             var subj="Investment Opportunity from LEA — "+firm.name;
             var intro="Hi [First Name],\n\nWe're on the investment team at Legal Enterprises of America (LEA). We are a private equity-backed platform that invests in law firm assets, via the MSO model. We're raising hundreds of millions to acquire equity stakes from owners such as you, while also providing additional cash to invest in the firm, especially through marketing. We will bring expertise around technology and systems to provide administrative relief as well, serving as a long-term partner to grow your plan.";
-            var middle="\n\nWe are very impressed by your firm and feel that you could be a great partner. "+personal.trim();
+            var middle="\n\nWe are very impressed by your firm and feel that you could be a great partner."+bulletBlock;
             var close="\n\nWould you be open to a brief call to learn more and explore whether this could be a good fit?\n\nSincerely,\nLEA Team";
             window.location.href="mailto:?subject="+encodeURIComponent(subj)+"&body="+encodeURIComponent(intro+middle+close);
           }} style={{flex:1,padding:"8px 0",border:"none",borderRadius:8,background:"white",color:"#111827",fontSize:13,fontWeight:700,cursor:"pointer"}}>
