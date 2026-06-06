@@ -213,22 +213,16 @@ function OutreachPanel({ firm, enriched, insights }) {
     const comm       = insights?.community_focus || "";
     const hook       = insights?.outreach_hooks?.[0] || "";
     const subject    = `Partnership Opportunity for ${firm.name} — LEA Investment`;
-    const body =
-`Dear ${firstName},
-
-My name is [Your Name], and I'm reaching out from LEA Investment — a firm that specialises in partnering with and acquiring leading ${pa} law firms across the United States.
-
-We've been tracking high-quality firms in ${location}${comm ? `, and ${firm.name}'s focus on ${comm} stood out to us` : ` and ${firm.name} stood out as a strong candidate`}.
-${hook ? "\n" + hook + "\n" : ""}
-We work with founding partners to provide liquidity, growth capital, and a clear succession pathway — without disrupting day-to-day operations.
-
-Would you have 20 minutes for a confidential call this week?
-
-Best regards,
-[Your Name]
-LEA Investment`;
+    const nl = "\n";
+    const body = "Dear " + firstName + "," + nl + nl +
+      "My name is [Your Name], and I'm reaching out from LEA Investment - a firm that specialises in partnering with and acquiring leading " + pa + " law firms across the United States." + nl + nl +
+      "We've been tracking high-quality firms in " + location + (comm ? ", and " + firm.name + "'s focus on " + comm + " stood out to us" : " and " + firm.name + " stood out as a strong candidate") + "." +
+      (hook ? nl + nl + hook : "") + nl + nl +
+      "We work with founding partners to provide liquidity, growth capital, and a clear succession pathway - without disrupting day-to-day operations." + nl + nl +
+      "Would you have 20 minutes for a confidential call this week?" + nl + nl +
+      "Best regards," + nl + "[Your Name]" + nl + "LEA Investment";
     setDraft(body); setDraftText(body); setShowDraft(true);
-    if (email) window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    if (email) window.location.href = "mailto:" + email + "?subject=" + encodeURIComponent(subject) + "&body=" + encodeURIComponent(body);
   }
 
   async function runAIEmail() {
@@ -1903,729 +1897,41 @@ function WeeklyDigestTrigger() {
 }
 
 function ManagePage({ watchlist, crmData, setCrmData }) {
-  // ── Local CRM state ──────────────────────────────────────
-  const [view,     setView]     = useState("table");
-  const [selected, setSelected] = useState(null);
-  const [noteText, setNoteText] = useState("");
-  const [sortCol,  setSortCol]  = useState("name");
-  const [sortDir,  setSortDir]  = useState("asc");
-  const [newsMap,  setNewsMap]  = useState({});
-  const [loadingNews, setLoadingNews] = useState(null);
-
-  // ── Monday.com state ─────────────────────────────────────
-  const [mode,          setMode]          = useState("local");   // "local" | "monday"
-  const [tokenInput,    setTokenInput]    = useState("");
-  const [mondayToken,   setMondayToken]   = useState("");
-  const [mondayBoards,  setMondayBoards]  = useState(null);
-  const [mondayBoardId, setMondayBoardId] = useState("");
-  const [mondayBoard,   setMondayBoard]   = useState(null);
-  const [mondayLoading, setMondayLoading] = useState(false);
-  const [mondayError,   setMondayError]   = useState("");
-  const [showToken,     setShowToken]     = useState(false);
-
-  // ── Local CRM helpers ────────────────────────────────────
-  const isDemo   = watchlist.length === 0;
-  const allFirms = isDemo ? SAMPLE_FIRMS : watchlist;
-
-  function getCrm(f) {
-    const key = `${f.name}|${f.city}`;
-    if (isDemo) return SAMPLE_CRM[key] || { stage:"prospect", emailStatus:"not_sent", notes:"", activities:[], dateAdded:"—" };
-    return crmData[key]              || { stage:"prospect", emailStatus:"not_sent", notes:"", activities:[], dateAdded:"—" };
-  }
-  function updateCrm(firm, patch) {
-    if (isDemo) return;
-    const key = `${firm.name}|${firm.city}`;
-    setCrmData(d => ({ ...d, [key]: { ...d[key], ...patch } }));
-  }
-  function setEmailStatus(firm, st) {
-    const activity = `${new Date().toLocaleDateString()} — Email: ${emailLabel[st]}`;
-    updateCrm(firm, { emailStatus: st, activities:[...(getCrm(firm).activities||[]), activity] });
-  }
-  function advanceStage(firm, e) {
-    e?.stopPropagation();
-    const stages = CRM_STAGES.map(s=>s.id);
-    const cur  = getCrm(firm).stage || "prospect";
-    const next = stages[Math.min(stages.indexOf(cur)+1, stages.length-1)];
-    const label = CRM_STAGES.find(s=>s.id===next)?.label;
-    updateCrm(firm, { stage:next, activities:[...(getCrm(firm).activities||[]), `${new Date().toLocaleDateString()} — Moved to ${label}`] });
-  }
-  async function loadNews(firm) {
-    const key = `${firm.name}|${firm.city}`;
-    setLoadingNews(key);
-    try {
-      const resp = await fetch("/api/scrape", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ firm_name:firm.name, city:firm.city, state:firm.state||"", source_key:"news_press" })
-      });
-      const data = await resp.json();
-      setNewsMap(m => ({ ...m, [key]: data.result?.articles || [] }));
-    } catch { setNewsMap(m => ({ ...m, [key]: [] })); }
-    finally  { setLoadingNews(null); }
-  }
-
-  const emailDotColor = { not_sent:"#D1D5DB", sent:"#D97706", responded:"#16A34A", no_response:"#DC2626" };
-  const emailLabel    = { not_sent:"Not Sent", sent:"Sent",  responded:"Responded", no_response:"No Response" };
-
-  // ── Monday.com helpers ───────────────────────────────────
-  async function connectMonday() {
-    if (!tokenInput.trim()) return;
-    setMondayLoading(true); setMondayError("");
-    try {
-      const resp = await fetch("/api/monday/boards", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ token: tokenInput.trim() })
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || "Connection failed");
-      setMondayToken(tokenInput.trim());
-      setMondayBoards(data.boards);
-      setShowToken(false);
-      if (data.boards.length > 0) {
-        const firstId = String(data.boards[0].id);
-        setMondayBoardId(firstId);
-        fetchMondayBoard(firstId, tokenInput.trim());
-      }
-    } catch(e) { setMondayError(e.message); }
-    finally    { setMondayLoading(false); }
-  }
-  async function fetchMondayBoard(boardId, token) {
-    setMondayLoading(true); setMondayError("");
-    try {
-      const resp = await fetch("/api/monday/items", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({ token: token||mondayToken, board_id: boardId })
-      });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || "Failed to load board");
-      setMondayBoard(data.board);
-    } catch(e) { setMondayError(e.message); }
-    finally    { setMondayLoading(false); }
-  }
-
-  // Map a Monday.com item's column_values to a readable object
-  function parseMondayItem(item, columns) {
-    const cv = {};
-    (item.column_values||[]).forEach(col => {
-      const colDef = columns.find(c=>c.id===col.id);
-      const title  = colDef?.title || col.id;
-      cv[title]    = col.text || "";
-    });
-    return cv;
-  }
-
-  // Find the "status" column value for an item (Monday.com's colored pill column)
-  function getMondayStatus(item, columns) {
-    const statusCol = columns.find(c=>c.type==="color"||c.type==="status"||c.title?.toLowerCase().includes("status")||c.title?.toLowerCase().includes("stage"));
-    if (!statusCol) return "";
-    const cv = (item.column_values||[]).find(c=>c.id===statusCol.id);
-    return cv?.text || "";
-  }
-
-  // ── Stats (local) ────────────────────────────────────────
-  const total     = allFirms.length;
-  const contacted = allFirms.filter(f=>getCrm(f).emailStatus!=="not_sent").length;
-  const responded = allFirms.filter(f=>getCrm(f).emailStatus==="responded").length;
-  const closed    = allFirms.filter(f=>getCrm(f).stage==="closed").length;
-
-  // ── Sorted firms (local table) ───────────────────────────
-  const sortedFirms = [...allFirms].sort((a,b) => {
-    let av, bv;
-    if      (sortCol==="name")    { av=a.name; bv=b.name; }
-    else if (sortCol==="rating")  { av=a.google_stars||0; bv=b.google_stars||0; }
-    else if (sortCol==="reviews") { av=a.google_review_count||0; bv=b.google_review_count||0; }
-    else if (sortCol==="attys")   { av=a.attorney_count||0; bv=b.attorney_count||0; }
-    else if (sortCol==="stage")   { av=CRM_STAGES.findIndex(s=>s.id===getCrm(a).stage); bv=CRM_STAGES.findIndex(s=>s.id===getCrm(b).stage); }
-    else { av=a.name; bv=b.name; }
-    if (typeof av==="string") return sortDir==="asc"?av.localeCompare(bv):bv.localeCompare(av);
-    return sortDir==="asc"?av-bv:bv-av;
-  });
-
-  function SortTh({ col, label, style={} }) {
-    const active = sortCol===col;
-    return (
-      <th onClick={()=>{ if(active) setSortDir(d=>d==="asc"?"desc":"asc"); else{setSortCol(col);setSortDir("asc");} }}
-        style={{ padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700,
-                 color:active?"#4F46E5":"#6B7280", textTransform:"uppercase", letterSpacing:"0.05em",
-                 cursor:"pointer", userSelect:"none", background:"#F8F9FB",
-                 borderBottom:"2px solid #E5E7EB", whiteSpace:"nowrap", ...style }}>
-        {label} {active?(sortDir==="asc"?"↑":"↓"):""}
-      </th>
-    );
-  }
-
-  // ── Monday.com items table ───────────────────────────────
-  const mondayItems   = mondayBoard?.items_page?.items || [];
-  const mondayColumns = mondayBoard?.columns || [];
-  // Determine which columns to show (skip system/formula types, limit to 5)
-  const displayCols = mondayColumns
-    .filter(c => !["formula","mirror","dependency","button","doc"].includes(c.type))
-    .filter(c => c.title !== "Name")
-    .slice(0, 5);
-
+  const SPREADSHEET_ID = "1Xn9T5hCEgbnMmE1cRBpEaDQvhxvcl4yGUI4MQlWKdXQ";
+  const [loaded, setLoaded] = React.useState(false);
   return (
-    <div style={{display:"flex",flexDirection:"column",height:"100%",overflow:"hidden",background:"#F8F9FB"}}>
-
-      {/* ── Top bar ── */}
-      <div style={{background:"white",borderBottom:"1px solid #E5E7EB",padding:"0 20px",flexShrink:0}}>
-        {/* Title row */}
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 0 10px",flexWrap:"wrap"}}>
-          <div>
-            <div style={{fontSize:18,fontWeight:800,color:"#111827",letterSpacing:"-0.02em"}}>
-              {mode==="monday" && mondayBoard ? mondayBoard.name : "Pipeline Board"}
-            </div>
-            <div style={{fontSize:12,color:"#9CA3AF",marginTop:1}}>
-              {mode==="monday"
-                ? (mondayBoard ? `${mondayItems.length} items from Monday.com` : "Connect your Monday.com account below")
-                : (isDemo ? "Demo mode — add firms from Discover to populate your real pipeline" : `${total} firms tracked`)}
-            </div>
-          </div>
-          {isDemo && mode==="local" && (
-            <span style={{background:"#FEF3C7",color:"#D97706",fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,border:"1px solid #FDE68A"}}>Demo</span>
-          )}
-
-          {/* Source mode toggle */}
-          <div style={{display:"flex",background:"#F3F4F6",borderRadius:8,padding:3,gap:2}}>
-            {[["local","📋  Local CRM"],["monday","☰  Monday.com"]].map(([v,lbl])=>(
-              <button key={v} onClick={()=>setMode(v)}
-                style={{ padding:"5px 14px",borderRadius:6,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",
-                         background:mode===v?"white":"transparent", color:mode===v?"#4F46E5":"#6B7280",
-                         boxShadow:mode===v?"0 1px 4px rgba(0,0,0,0.08)":"none" }}>
-                {lbl}
-              </button>
-            ))}
-          </div>
-
-          {/* Local CRM view toggle (only in local mode) */}
-          {mode==="local" && (
-            <div style={{display:"flex",background:"#F3F4F6",borderRadius:8,padding:3,gap:2}}>
-              {[["table","☰  Table"],["board","⊞  Board"]].map(([v,lbl])=>(
-                <button key={v} onClick={()=>setView(v)}
-                  style={{ padding:"5px 12px",borderRadius:6,border:"none",fontSize:12,fontWeight:700,cursor:"pointer",
-                           background:view===v?"white":"transparent", color:view===v?"#4F46E5":"#6B7280",
-                           boxShadow:view===v?"0 1px 4px rgba(0,0,0,0.08)":"none" }}>
-                  {lbl}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Monday.com board selector (when connected) */}
-          {mode==="monday" && mondayBoards && (
-            <select value={mondayBoardId}
-              onChange={e=>{ setMondayBoardId(e.target.value); fetchMondayBoard(e.target.value, mondayToken); }}
-              style={{padding:"6px 10px",borderRadius:7,border:"1px solid #E5E7EB",fontSize:12,fontWeight:600,color:"#374151",background:"white",cursor:"pointer"}}>
-              {mondayBoards.map(b=>(
-                <option key={b.id} value={String(b.id)}>{b.name} ({b.items_count} items)</option>
-              ))}
-            </select>
-          )}
-          {mode==="monday" && mondayToken && (
-            <button onClick={()=>fetchMondayBoard(mondayBoardId, mondayToken)} disabled={mondayLoading}
-              style={{padding:"6px 12px",borderRadius:7,border:"1px solid #E5E7EB",background:"white",fontSize:12,fontWeight:700,color:"#374151",cursor:"pointer"}}>
-              {mondayLoading ? "Loading…" : "↻ Refresh"}
-            </button>
-          )}
-          {mode==="monday" && mondayToken && (
-            <button onClick={()=>{ setMondayToken(""); setMondayBoards(null); setMondayBoard(null); setShowToken(true); }}
-              style={{padding:"6px 12px",borderRadius:7,border:"1px solid #FECACA",background:"#FFF5F5",fontSize:12,fontWeight:700,color:"#DC2626",cursor:"pointer"}}>
-              Disconnect
-            </button>
-          )}
+    <div style={{height:"100%",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{padding:"12px 24px",borderBottom:"1px solid #F3F4F6",background:"white",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontSize:15,fontWeight:800,color:"#111827"}}>Sourcing Tracker</div>
+          <div style={{fontSize:12,color:"#6B7280",marginTop:1}}>Live Google Sheet — edit directly or open in Sheets</div>
         </div>
-
-        {/* Stats row (local CRM) */}
-        {mode==="local" && (
-          <div style={{display:"flex",gap:0,borderTop:"1px solid #F3F4F6"}}>
-            {[
-              {label:"Total Firms",   value:total,     color:"#4F46E5"},
-              {label:"Contacted",     value:contacted, color:"#D97706"},
-              {label:"Responded",     value:responded, color:"#16A34A"},
-              {label:"Response Rate", value:contacted>0?`${Math.round((responded/contacted)*100)}%`:"—", color:"#7C3AED"},
-              {label:"Closed",        value:closed,    color:"#0EA5E9"},
-            ].map(s=>(
-              <div key={s.label} style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8,borderRight:"1px solid #F3F4F6"}}>
-                <span style={{fontSize:20,fontWeight:800,color:s.color}}>{s.value}</span>
-                <span style={{fontSize:11,color:"#9CA3AF",fontWeight:500}}>{s.label}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Monday.com stats row (when connected) */}
-        {mode==="monday" && mondayBoard && (
-          <div style={{display:"flex",gap:0,borderTop:"1px solid #F3F4F6"}}>
-            <div style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8,borderRight:"1px solid #F3F4F6"}}>
-              <span style={{fontSize:20,fontWeight:800,color:"#F62E7B"}}>{mondayItems.length}</span>
-              <span style={{fontSize:11,color:"#9CA3AF",fontWeight:500}}>Items</span>
-            </div>
-            <div style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8,borderRight:"1px solid #F3F4F6"}}>
-              <span style={{fontSize:20,fontWeight:800,color:"#4F46E5"}}>{mondayColumns.length}</span>
-              <span style={{fontSize:11,color:"#9CA3AF",fontWeight:500}}>Columns</span>
-            </div>
-            <div style={{padding:"8px 18px",display:"flex",alignItems:"center",gap:8}}>
-              <span style={{fontSize:11,color:"#9CA3AF"}}>Board: <b style={{color:"#374151"}}>{mondayBoard.name}</b></span>
-            </div>
-            <div style={{marginLeft:"auto",padding:"8px 18px",display:"flex",alignItems:"center"}}>
-              <a href="https://monday.com" target="_blank" rel="noopener"
-                style={{fontSize:11,fontWeight:700,color:"#F62E7B",textDecoration:"none",display:"flex",alignItems:"center",gap:4}}>
-                Open in Monday.com ↗
-              </a>
-            </div>
-          </div>
-        )}
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <WeeklyDigestTrigger/>
+          <a href={"https://docs.google.com/spreadsheets/d/"+SPREADSHEET_ID+"/edit"} target="_blank" rel="noopener noreferrer"
+            style={{padding:"7px 14px",borderRadius:8,border:"1px solid #E5E7EB",background:"white",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"none"}}>
+            Open in Sheets
+          </a>
+        </div>
       </div>
-
-      {/* ── Content ── */}
-      <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-
-        {/* ══════════════════════════════════════════════════
-            MONDAY.COM MODE
-        ══════════════════════════════════════════════════ */}
-        {mode==="monday" && (
-          <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-
-            {/* Connect panel (shown when not connected) */}
-            {!mondayToken && (
-              <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40}}>
-                <div style={{maxWidth:520,width:"100%",background:"white",borderRadius:16,padding:36,boxShadow:"0 4px 24px rgba(0,0,0,0.08)",border:"1px solid #F3F4F6",textAlign:"center"}}>
-                  {/* Monday.com logo-style badge */}
-                  <div style={{width:56,height:56,borderRadius:14,background:"linear-gradient(135deg,#F62E7B,#FF6B6B)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,margin:"0 auto 16px",boxShadow:"0 4px 16px rgba(246,46,123,0.3)"}}>
-                    ☰
-                  </div>
-                  <div style={{fontSize:20,fontWeight:800,color:"#111827",marginBottom:8}}>Connect Monday.com</div>
-                  <div style={{fontSize:13,color:"#6B7280",lineHeight:1.6,marginBottom:28}}>
-                    Pull your real board data — items, statuses, and columns — directly into this pipeline view.
-                    Your API token stays local and is never stored.
-                  </div>
-
-                  <div style={{textAlign:"left",marginBottom:16}}>
-                    <label style={{fontSize:11,fontWeight:700,color:"#374151",textTransform:"uppercase",letterSpacing:"0.05em",display:"block",marginBottom:6}}>
-                      Monday.com API Token
-                    </label>
-                    <div style={{display:"flex",gap:8}}>
-                      <input
-                        type={showToken?"text":"password"}
-                        value={tokenInput}
-                        onChange={e=>setTokenInput(e.target.value)}
-                        onKeyDown={e=>e.key==="Enter"&&connectMonday()}
-                        placeholder="Paste your v2 API token…"
-                        style={{flex:1,padding:"10px 14px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:13,color:"#111827",outline:"none"}}
-                      />
-                      <button onClick={()=>setShowToken(v=>!v)}
-                        style={{padding:"10px 12px",border:"1px solid #E5E7EB",borderRadius:8,background:"white",cursor:"pointer",fontSize:13,color:"#6B7280"}}>
-                        {showToken?"🙈":"👁"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {mondayError && (
-                    <div style={{background:"#FFF5F5",border:"1px solid #FECACA",borderRadius:8,padding:"10px 14px",fontSize:12,color:"#DC2626",marginBottom:16,textAlign:"left"}}>
-                      ⚠ {mondayError}
-                    </div>
-                  )}
-
-                  <button onClick={connectMonday} disabled={mondayLoading||!tokenInput.trim()}
-                    style={{width:"100%",padding:"12px",borderRadius:9,border:"none",background:mondayLoading||!tokenInput.trim()?"#E5E7EB":"linear-gradient(135deg,#F62E7B,#FF6B6B)",color:mondayLoading||!tokenInput.trim()?"#9CA3AF":"white",fontSize:14,fontWeight:700,cursor:mondayLoading||!tokenInput.trim()?"not-allowed":"pointer",transition:"opacity 0.2s"}}>
-                    {mondayLoading ? "Connecting…" : "Connect →"}
-                  </button>
-
-                  <div style={{marginTop:18,fontSize:12,color:"#9CA3AF",lineHeight:1.6}}>
-                    Get your token at{" "}
-                    <a href="https://monday.com/apps/manage/tokens" target="_blank" rel="noopener" style={{color:"#F62E7B",fontWeight:600}}>
-                      monday.com/apps/manage/tokens
-                    </a>
-                    {" "}→ Developer → API v2 token
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Loading state */}
-            {mondayToken && mondayLoading && !mondayBoard && (
-              <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
-                <Spinner size={32} color="#F62E7B"/>
-                <div style={{fontSize:13,color:"#6B7280"}}>Loading your Monday.com board…</div>
-              </div>
-            )}
-
-            {/* Monday.com board table */}
-            {mondayToken && mondayBoard && (
-              <div style={{flex:1,overflowY:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
-                  <thead style={{position:"sticky",top:0,zIndex:10}}>
-                    <tr>
-                      <th style={{padding:"10px 14px 10px 20px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",width:260}}>
-                        Item Name
-                      </th>
-                      {displayCols.map(col=>(
-                        <th key={col.id} style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",whiteSpace:"nowrap"}}>
-                          {col.title}
-                        </th>
-                      ))}
-                      <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB"}}>Updated</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mondayItems.filter(i=>i.state!=="deleted").map((item,i)=>{
-                      const parsed = parseMondayItem(item, mondayColumns);
-                      const statusText = getMondayStatus(item, mondayColumns);
-                      // Color-code status similar to Monday.com
-                      const statusColors = {
-                        "done":"#00C875", "working on it":"#FDAB3D", "stuck":"#DF2F4A",
-                        "not started":"#C4C4C4", "closed":"#00C875", "in progress":"#FDAB3D",
-                        "prospect":"#7B68EE", "contacted":"#FDAB3D", "responded":"#00C875",
-                      };
-                      const sColor = statusColors[statusText?.toLowerCase()] || "#C4C4C4";
-                      return (
-                        <tr key={item.id}
-                          style={{borderBottom:"1px solid #F3F4F6",background:"white",transition:"background 0.1s",cursor:"default"}}
-                          onMouseEnter={e=>e.currentTarget.style.background="#F9FAFB"}
-                          onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                          {/* Item name with Monday.com color dot */}
-                          <td style={{padding:"10px 14px 10px 20px"}}>
-                            <div style={{display:"flex",alignItems:"center",gap:10}}>
-                              <div style={{width:4,height:36,borderRadius:2,background:"#F62E7B",flexShrink:0}}/>
-                              <div>
-                                <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>{item.name}</div>
-                                <div style={{fontSize:10,color:"#9CA3AF",marginTop:1}}>ID {item.id}</div>
-                              </div>
-                            </div>
-                          </td>
-                          {/* Dynamic columns */}
-                          {displayCols.map(col=>{
-                            const cv = (item.column_values||[]).find(c=>c.id===col.id);
-                            const text = cv?.text || "";
-                            const isStatus = col.type==="color"||col.type==="status";
-                            const sc = statusColors[text?.toLowerCase()] || "#C4C4C4";
-                            return (
-                              <td key={col.id} style={{padding:"10px 14px"}}>
-                                {isStatus && text
-                                  ? <span style={{display:"inline-block",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700,background:sc,color:"white",whiteSpace:"nowrap"}}>
-                                      {text}
-                                    </span>
-                                  : <span style={{fontSize:12,color:text?"#374151":"#D1D5DB"}}>{text||"—"}</span>
-                                }
-                              </td>
-                            );
-                          })}
-                          {/* Updated date */}
-                          <td style={{padding:"10px 14px",fontSize:11,color:"#9CA3AF"}}>
-                            {item.updated_at ? new Date(item.updated_at).toLocaleDateString() : "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {mondayItems.length===0 && (
-                      <tr><td colSpan={displayCols.length+2} style={{padding:"60px 20px",textAlign:"center",color:"#9CA3AF",fontSize:14}}>
-                        No items in this board.
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
+      <div style={{flex:1,position:"relative",background:"#F9FAFB"}}>
+        {!loaded && (
+          <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:12}}>
+            <Spinner size={32}/>
+            <div style={{fontSize:13,color:"#6B7280"}}>Loading tracker...</div>
           </div>
         )}
-
-        {/* ══════════════════════════════════════════════════
-            LOCAL CRM MODE
-        ══════════════════════════════════════════════════ */}
-        {mode==="local" && (
-          <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-
-            {/* TABLE VIEW */}
-            {view==="table" && (
-              <div style={{flex:1,overflowY:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
-                  <thead style={{position:"sticky",top:0,zIndex:10}}>
-                    <tr>
-                      <SortTh col="name"    label="Firm Name" style={{width:240,paddingLeft:20}}/>
-                      <SortTh col="stage"   label="Stage"     style={{width:130}}/>
-                      <th style={{padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",width:120}}>Email</th>
-                      <SortTh col="rating"  label="★ Rating"  style={{width:95}}/>
-                      <SortTh col="reviews" label="Reviews"   style={{width:95}}/>
-                      <SortTh col="attys"   label="Attorneys" style={{width:95}}/>
-                      <th style={{padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB"}}>Last Activity</th>
-                      <th style={{padding:"10px 14px",fontSize:11,fontWeight:700,color:"#6B7280",textTransform:"uppercase",letterSpacing:"0.05em",background:"#F8F9FB",borderBottom:"2px solid #E5E7EB",width:110}}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedFirms.map((firm,i)=>{
-                      const crm   = getCrm(firm);
-                      const stage = CRM_STAGES.find(s=>s.id===crm.stage)||CRM_STAGES[0];
-                      const isAct = selected?.name===firm.name && selected?.city===firm.city;
-                      return (
-                        <tr key={i} onClick={()=>{setSelected(isAct?null:firm);setNoteText(getCrm(firm).notes||"");}}
-                          style={{background:isAct?"#EEF2FF":"white",borderBottom:"1px solid #F3F4F6",cursor:"pointer",transition:"background 0.1s"}}
-                          onMouseEnter={e=>!isAct&&(e.currentTarget.style.background="#F9FAFB")}
-                          onMouseLeave={e=>!isAct&&(e.currentTarget.style.background=isAct?"#EEF2FF":"white")}>
-                          <td style={{padding:"10px 14px 10px 20px"}}>
-                            <div style={{display:"flex",alignItems:"center",gap:10}}>
-                              <FirmAvatar name={firm.name} size={30} fontSize={11} bg={isAct?"#4F46E5":"#1E293B"}/>
-                              <div>
-                                <div style={{fontSize:13,fontWeight:700,color:"#111827"}}>{firm.name}</div>
-                                <div style={{fontSize:11,color:"#9CA3AF"}}>{firm.city}, {firm.state}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td style={{padding:"10px 14px"}}>
-                            <span style={{display:"inline-block",padding:"3px 12px",borderRadius:20,fontSize:11,fontWeight:700,background:stage.bg,color:stage.color,border:`1px solid ${stage.border}`}}>
-                              {stage.label}
-                            </span>
-                          </td>
-                          <td style={{padding:"10px 14px"}}>
-                            <div style={{display:"flex",alignItems:"center",gap:6}}>
-                              <div style={{width:8,height:8,borderRadius:"50%",background:emailDotColor[crm.emailStatus]||"#D1D5DB"}}/>
-                              <span style={{fontSize:11,color:"#6B7280"}}>{emailLabel[crm.emailStatus]||"—"}</span>
-                            </div>
-                          </td>
-                          <td style={{padding:"10px 14px",fontSize:13,fontWeight:700,color:firm.google_stars>=4?"#059669":firm.google_stars>=3?"#D97706":"#6B7280"}}>
-                            {firm.google_stars>0?`★ ${firm.google_stars.toFixed(1)}`:<span style={{color:"#D1D5DB"}}>—</span>}
-                          </td>
-                          <td style={{padding:"10px 14px",fontSize:12,color:"#374151"}}>
-                            {firm.google_review_count>0?firm.google_review_count.toLocaleString():<span style={{color:"#D1D5DB"}}>—</span>}
-                          </td>
-                          <td style={{padding:"10px 14px",fontSize:12,color:"#374151"}}>
-                            {firm.attorney_count||firm.attorney_count_web||firm.attorney_count_est||<span style={{color:"#D1D5DB"}}>—</span>}
-                          </td>
-                          <td style={{padding:"10px 14px",fontSize:11,color:"#6B7280",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                            {crm.activities?.slice(-1)[0]||"—"}
-                          </td>
-                          <td style={{padding:"10px 14px"}} onClick={e=>e.stopPropagation()}>
-                            {stage.id!=="closed" && (
-                              <button onClick={e=>advanceStage(firm,e)}
-                                style={{padding:"4px 8px",borderRadius:5,border:"1px solid #E5E7EB",background:"white",fontSize:10,fontWeight:700,color:"#374151",cursor:"pointer",whiteSpace:"nowrap"}}>
-                                → {CRM_STAGES[Math.min(CRM_STAGES.findIndex(s=>s.id===stage.id)+1,CRM_STAGES.length-1)]?.label}
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {allFirms.length===0 && (
-                      <tr><td colSpan={8} style={{padding:"60px 20px",textAlign:"center",color:"#9CA3AF",fontSize:14}}>
-                        No firms yet — add firms from Discover.
-                      </td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {/* BOARD VIEW */}
-            {view==="board" && (
-              <div style={{flex:1,overflowX:"auto",overflowY:"hidden",display:"flex",gap:0}}>
-                {CRM_STAGES.map(stage=>{
-                  const firms = allFirms.filter(f=>getCrm(f).stage===stage.id);
-                  return (
-                    <div key={stage.id} style={{width:220,flexShrink:0,display:"flex",flexDirection:"column",borderRight:"1px solid #E5E7EB",background:"#FAFAFA",height:"100%"}}>
-                      <div style={{padding:"12px 14px 10px",borderBottom:"1px solid #E5E7EB",background:stage.bg,flexShrink:0}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <span style={{fontSize:12,fontWeight:700,color:stage.color}}>{stage.label}</span>
-                          <span style={{marginLeft:"auto",background:stage.color,color:"white",borderRadius:10,padding:"1px 8px",fontSize:11,fontWeight:800}}>{firms.length}</span>
-                        </div>
-                      </div>
-                      <div style={{flex:1,overflowY:"auto",padding:"10px 8px",display:"flex",flexDirection:"column",gap:8}}>
-                        {firms.length===0&&<div style={{fontSize:11,color:"#D1D5DB",textAlign:"center",marginTop:20}}>No firms</div>}
-                        {firms.map((firm,i)=>{
-                          const crm=getCrm(firm);
-                          const isAct=selected?.name===firm.name&&selected?.city===firm.city;
-                          return (
-                            <div key={i} onClick={()=>{setSelected(isAct?null:firm);setNoteText(getCrm(firm).notes||"");}}
-                              style={{background:"white",border:`1px solid ${isAct?"#6366F1":"#E5E7EB"}`,borderRadius:10,padding:"12px 12px 10px",boxShadow:"0 1px 4px rgba(0,0,0,0.05)",cursor:"pointer"}}>
-                              <div style={{display:"flex",alignItems:"flex-start",gap:8,marginBottom:8}}>
-                                <FirmAvatar name={firm.name} size={28} fontSize={11} bg={isAct?"#4F46E5":"#111827"}/>
-                                <div style={{flex:1,minWidth:0}}>
-                                  <div style={{fontSize:12,fontWeight:700,color:"#111827",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{firm.name}</div>
-                                  <div style={{fontSize:10,color:"#9CA3AF",marginTop:1}}>{firm.city}, {firm.state}</div>
-                                </div>
-                                <div style={{width:8,height:8,borderRadius:"50%",background:emailDotColor[crm.emailStatus]||"#D1D5DB",flexShrink:0,marginTop:3}} title={emailLabel[crm.emailStatus]}/>
-                              </div>
-                              {firm.google_stars>0&&<div style={{fontSize:10,color:"#F59E0B",marginBottom:6}}>★ {firm.google_stars.toFixed(1)} <span style={{color:"#9CA3AF"}}>({(firm.google_review_count||0).toLocaleString()} reviews)</span></div>}
-                              {crm.notes&&<div style={{fontSize:10,color:"#6B7280",marginBottom:8,lineHeight:1.4,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{crm.notes}</div>}
-                              {stage.id!=="closed"&&(
-                                <button onClick={e=>advanceStage(firm,e)}
-                                  style={{width:"100%",padding:"4px 0",borderRadius:5,border:"none",background:"#F3F4F6",color:"#374151",fontSize:10,fontWeight:700,cursor:"pointer",marginTop:4}}>
-                                  → {CRM_STAGES[Math.min(CRM_STAGES.findIndex(s=>s.id===stage.id)+1,CRM_STAGES.length-1)]?.label}
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {view==="workflows" && (
-              <div style={{flex:1,overflowY:"auto",padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
-
-                {/* Auto-Enrich on Save */}
-                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid #E5E7EB",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
-                    <div style={{width:40,height:40,borderRadius:10,background:"#F0FDF4",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
-                    </div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:14,fontWeight:800,color:"#111827",marginBottom:3}}>Auto-Enrich on Save</div>
-                      <div style={{fontSize:12,color:"#6B7280",lineHeight:1.55}}>
-                        When you save a firm to the watchlist, LEA automatically fetches its Google rating, LinkedIn headcount, court activity, and estimated revenue — no manual clicks needed.
-                      </div>
-                      <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap"}}>
-                        {["Google Rating","LinkedIn Data","Court Activity","Revenue Estimate","Website Discovery"].map(item=>(
-                          <span key={item} style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:5,background:"#F0FDF4",color:"#059669",border:"1px solid #BBF7D0"}}>{"✓"} {item}</span>
-                        ))}
-                      </div>
-                      <div style={{marginTop:10,fontSize:11,color:"#6B7280",background:"#F9FAFB",borderRadius:7,padding:"8px 12px",border:"1px solid #F3F4F6"}}>
-                        <strong style={{color:"#374151"}}>Status:</strong> Active — runs automatically each time a firm is saved to the watchlist
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Investment Score Engine */}
-                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid #E5E7EB",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
-                    <div style={{width:40,height:40,borderRadius:10,background:"#EFF6FF",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    </div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:14,fontWeight:800,color:"#111827",marginBottom:3}}>Investment Score Engine</div>
-                      <div style={{fontSize:12,color:"#6B7280",lineHeight:1.55}}>
-                        After AI website analysis, LEA automatically computes a 0-100 investment score using 5 weighted signals (client volume, reputation, scale, market activity, acquisition readiness) synthesised by an LLM.
-                      </div>
-                      <div style={{marginTop:10,display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:8}}>
-                        {[["Client Volume","25%"],["Reputation","20%"],["Scale","20%"],["Market Activity","15%"],["Acq. Readiness","15%"],["LEA Bonus","5%"]].map(([n,w])=>(
-                          <div key={n} style={{background:"#F8FAFC",borderRadius:7,padding:"8px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                            <span style={{fontSize:11,color:"#374151",fontWeight:600}}>{n}</span>
-                            <span style={{fontSize:11,fontWeight:800,color:"#2563EB"}}>{w}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Weekly Market Digest */}
-                <div style={{background:"white",borderRadius:12,padding:"18px 20px",border:"1px solid #E5E7EB",boxShadow:"0 1px 4px rgba(0,0,0,0.05)"}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:14}}>
-                    <div style={{width:40,height:40,borderRadius:10,background:"#FEF3C7",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                    </div>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:14,fontWeight:800,color:"#111827",marginBottom:3}}>Weekly Market Digest</div>
-                      <div style={{fontSize:12,color:"#6B7280",lineHeight:1.55,marginBottom:10}}>
-                        Scans the top LEA target markets every week, ranks firms by investment score, and surfaces the highest-priority opportunities for the team. Run it manually from the Heat Map tab, or trigger it here.
-                      </div>
-                      <WeeklyDigestTrigger/>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            )}
-
-            {/* DETAIL PANEL */}
-            {selected && mode==="local" && (()=>{
-              const crm = getCrm(selected);
-              const key = `${selected.name}|${selected.city}`;
-              const news = newsMap[key];
-              return (
-                <div style={{width:350,flexShrink:0,borderLeft:"1px solid #E5E7EB",display:"flex",flexDirection:"column",background:"white",overflow:"hidden",animation:"slideRight 0.18s ease"}}>
-                  <div style={{padding:"16px 18px",borderBottom:"1px solid #F3F4F6",display:"flex",alignItems:"center",gap:10,flexShrink:0,background:"#FAFBFC"}}>
-                    <FirmAvatar name={selected.name} size={36}/>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selected.name}</div>
-                      <div style={{fontSize:11,color:"#6B7280"}}>{selected.city}, {selected.state}</div>
-                    </div>
-                    <button onClick={()=>setSelected(null)} style={{background:"none",border:"none",cursor:"pointer",color:"#9CA3AF",fontSize:22,lineHeight:1,padding:"2px 4px"}}>×</button>
-                  </div>
-                  <div style={{flex:1,overflowY:"auto",padding:"16px 18px",display:"flex",flexDirection:"column",gap:14}}>
-                    {selected.google_stars>0&&(
-                      <div style={{background:"#FFFBEB",borderRadius:8,padding:"10px 14px",display:"flex",alignItems:"center",gap:12}}>
-                        <span style={{fontSize:22,fontWeight:900,color:"#D97706"}}>★ {selected.google_stars.toFixed(1)}</span>
-                        <div>
-                          <div style={{fontSize:12,fontWeight:700,color:"#92400E"}}>{(selected.google_review_count||0).toLocaleString()} Google reviews</div>
-                          <div style={{fontSize:11,color:"#B45309"}}>via {selected.rating_source||"Google"}</div>
-                        </div>
-                      </div>
-                    )}
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Pipeline Stage</div>
-                      <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                        {CRM_STAGES.map(s=>(
-                          <button key={s.id} onClick={()=>{
-                            const activity=`${new Date().toLocaleDateString()} — Moved to ${s.label}`;
-                            updateCrm(selected,{stage:s.id,activities:[...(crm.activities||[]),activity]});
-                          }} style={{padding:"5px 12px",borderRadius:6,border:`1px solid ${crm.stage===s.id?s.color:s.border}`,background:crm.stage===s.id?s.bg:"white",color:crm.stage===s.id?s.color:"#6B7280",fontSize:11,fontWeight:crm.stage===s.id?700:500,cursor:"pointer"}}>
-                            {s.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Email Status</div>
-                      <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-                        {[["not_sent","Not Sent","#6B7280"],["sent","Sent","#D97706"],["responded","Responded","#16A34A"],["no_response","No Response","#DC2626"]].map(([st,lb,co])=>(
-                          <button key={st} onClick={()=>setEmailStatus(selected,st)} style={{padding:"5px 10px",borderRadius:6,border:`1px solid ${crm.emailStatus===st?co:"#E5E7EB"}`,background:crm.emailStatus===st?co:"white",color:crm.emailStatus===st?"white":"#6B7280",fontSize:11,fontWeight:crm.emailStatus===st?700:500,cursor:"pointer"}}>
-                            {lb}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Notes</div>
-                      <textarea value={noteText} onChange={e=>setNoteText(e.target.value)} onBlur={()=>updateCrm(selected,{notes:noteText})}
-                        placeholder="Add notes about this firm, conversations, next steps…"
-                        style={{width:"100%",minHeight:90,padding:"10px 12px",border:"1px solid #E5E7EB",borderRadius:8,fontSize:12,lineHeight:1.6,resize:"vertical",color:"#111827",outline:"none",boxSizing:"border-box"}}/>
-                    </div>
-                    <div>
-                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                        <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em"}}>Recent News</div>
-                        <button onClick={()=>loadNews(selected)} style={{marginLeft:"auto",padding:"3px 10px",borderRadius:5,border:"1px solid #E5E7EB",background:"white",fontSize:10,fontWeight:700,color:"#374151",cursor:"pointer"}}>
-                          {loadingNews===key?"Loading…":news?"Refresh":"Load News"}
-                        </button>
-                      </div>
-                      {news&&news.length===0&&<div style={{fontSize:12,color:"#9CA3AF"}}>No recent articles found.</div>}
-                      {news&&news.length>0&&(
-                        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                          {news.slice(0,5).map((a,i)=>(
-                            <a key={i} href={a.url} target="_blank" rel="noopener" style={{display:"block",padding:"8px 10px",background:"#F8F9FB",borderRadius:7,border:"1px solid #E5E7EB",textDecoration:"none"}}>
-                              <div style={{fontSize:12,fontWeight:600,color:"#111827",marginBottom:3,lineHeight:1.4}}>{a.title}</div>
-                              <div style={{fontSize:10,color:"#6B7280"}}>{a.source} · {a.published_at?.slice(0,10)||"recent"}</div>
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {crm.activities?.length>0&&(
-                      <div>
-                        <div style={{fontSize:10,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Activity Log</div>
-                        <div style={{display:"flex",flexDirection:"column",gap:3}}>
-                          {[...crm.activities].reverse().map((a,i)=>(
-                            <div key={i} style={{fontSize:11,color:"#6B7280",padding:"4px 0",borderBottom:"1px solid #F9FAFB"}}>{a}</div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <div style={{paddingTop:8,borderTop:"1px solid #F3F4F6"}}>
-                      <OutreachPanel firm={selected} enriched={null}/>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        )}
+        <iframe
+          src={"https://docs.google.com/spreadsheets/d/"+SPREADSHEET_ID+"/edit?embedded=true&rm=minimal"}
+          onLoad={()=>setLoaded(true)}
+          style={{width:"100%",height:"100%",border:"none",display:loaded?"block":"none"}}
+          title="LEA Sourcing Tracker"
+        />
       </div>
     </div>
   );
 }
 
-
-// ── User Picker Modal ─────────────────────────────────────────────────────────
 function UserPickerModal({ onSelect }) {
   const [users, setUsers]   = useState([]);
   const [picked, setPicked] = useState("");
@@ -2707,14 +2013,22 @@ function App() {
 
   // Discover state lifted here so results persist across tab switches
   const [discoverMode,      setDiscoverMode]      = useState("search");
-  const [discoverForm,      setDiscoverForm]      = useState({city:"",state:"FL",practice_area:"personal injury",max_results:60});
+  const [discoverForm,      setDiscoverForm]      = useState(()=>{
+    try { const s=localStorage.getItem("lea_search_form"); return s?JSON.parse(s):{city:"",state:"FL",practice_area:"personal injury",max_results:60}; } catch(e){ return {city:"",state:"FL",practice_area:"personal injury",max_results:60}; }
+  });
   const [discoverCForm,     setDiscoverCForm]     = useState({city:"",state:"FL",practice_area:"personal injury",days_back:180});
-  const [discoverResults,   setDiscoverResults]   = useState(null);
+  const [discoverResults,   setDiscoverResults]   = useState(()=>{
+    try { const s=localStorage.getItem("lea_search_results"); return s?JSON.parse(s):null; } catch(e){ return null; }
+  });
   const [discoverAnalytics, setDiscoverAnalytics] = useState(null);
   const [discoverSelected,  setDiscoverSelected]  = useState(null);
   const [discoverError,     setDiscoverError]     = useState("");
   const [enrichCache,   setEnrichCache]   = useState({});
   const [notification,  setNotification]  = useState(null);
+
+  // Persist search state across tab closes
+  React.useEffect(()=>{ try { localStorage.setItem("lea_search_form", JSON.stringify(discoverForm)); } catch(e){} }, [discoverForm]);
+  React.useEffect(()=>{ try { if(discoverResults) localStorage.setItem("lea_search_results", JSON.stringify(discoverResults)); } catch(e){} }, [discoverResults]);
 
   function showNotification(msg, type) {
     setNotification({msg, type: type||"success"});
