@@ -520,36 +520,7 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
           </div>
         </div>
         {/* Score badge row */}
-        {(scoreData || scoreLoading) && (
-          <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
-            {scoreLoading && !scoreData && (
-              <div style={{display:"flex",alignItems:"center",gap:7,background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"7px 12px",flex:1}}>
-                <Spinner size={11} color="#818CF8"/>
-                <span style={{fontSize:11,color:"rgba(255,255,255,0.45)"}}>Calculating investment score…</span>
-              </div>
-            )}
-            {scoreData && (() => {
-              const s = scoreData.score || 0;
-              const g = scoreData.grade || "—";
-              const bg = s>=85?"#059669":s>=70?"#D97706":s>=55?"#EA580C":"#DC2626";
-              const action = scoreData.recommended_action||"Review";
-              const actionColor = action==="Invest Now"?"#6EE7B7":action==="Strong Consider"?"#86EFAC":action==="Monitor"?"#FCD34D":"#FCA5A5";
-              return (
-                <div style={{display:"flex",alignItems:"center",gap:10,background:"rgba(255,255,255,0.07)",borderRadius:10,padding:"10px 14px",flex:1,border:"1px solid rgba(255,255,255,0.1)"}}>
-                  <div style={{width:46,height:46,borderRadius:"50%",background:bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,border:"2px solid rgba(255,255,255,0.2)"}}>
-                    <div style={{fontSize:15,fontWeight:900,color:"white",lineHeight:1}}>{s}</div>
-                    <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.75)",letterSpacing:"0.04em"}}>{g}</div>
-                  </div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:2}}>Investment Score</div>
-                    <div style={{fontSize:11,color:"rgba(255,255,255,0.88)",lineHeight:1.35,display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical",overflow:"hidden"}}>{scoreData.investment_thesis||""}</div>
-                  </div>
-                  <span style={{fontSize:9,fontWeight:800,padding:"3px 8px",borderRadius:6,background:"rgba(0,0,0,0.25)",color:actionColor,flexShrink:0,textAlign:"center",lineHeight:1.3}}>{action}</span>
-                </div>
-              );
-            })()}
-          </div>
-        )}
+
         <div style={{display:"flex",gap:8,marginBottom:8}}>
           <button onClick={linkToSheet} disabled={sheetLinking||sheetLinked}
             style={{flex:1,padding:"8px 0",borderRadius:8,border:"none",cursor:sheetLinked?"default":sheetLinking?"not-allowed":"pointer",
@@ -597,273 +568,104 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
             {!loading && (
               <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:16}}>
 
-                {/* ── INVESTMENT SCORE BLOCK ── */}
-                {scoreData && (() => {
-                  const s = scoreData.score||0;
-                  const g = scoreData.grade||"—";
-                  const bg = s>=85?"#059669":s>=70?"#D97706":s>=55?"#EA580C":"#DC2626";
-                  const subs = scoreData.sub_scores||{};
-                  const subLabels = {client_volume:"Client Volume",reputation:"Reputation",scale:"Scale",market_activity:"Market Activity",acquisition_readiness:"Acq. Readiness"};
-                  return (
-                    <div style={{background:"linear-gradient(135deg,#0f172a,#1e3a5f)",borderRadius:12,padding:"16px 18px",border:"1px solid rgba(255,255,255,0.08)"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                        <div style={{width:52,height:52,borderRadius:"50%",background:bg,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",flexShrink:0,border:"2px solid rgba(255,255,255,0.15)",boxShadow:"0 0 0 4px "+bg+"33"}}>
-                          <div style={{fontSize:18,fontWeight:900,color:"white",lineHeight:1}}>{s}</div>
-                          <div style={{fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.8)"}}>{g}</div>
-                        </div>
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:13,fontWeight:800,color:"white"}}>Investment Score</div>
-                          {scoreData.recommended_action && (() => {
-                            const a = scoreData.recommended_action;
-                            const ac = a==="Invest Now"?"#6EE7B7":a==="Strong Consider"?"#86EFAC":a==="Monitor"?"#FCD34D":"#FCA5A5";
-                            return <span style={{fontSize:10,fontWeight:700,color:ac,background:"rgba(0,0,0,0.3)",borderRadius:5,padding:"2px 8px",marginTop:3,display:"inline-block"}}>{a}</span>;
-                          })()}
-                        </div>
-                        <button onClick={()=>scoreThisFirm(insights)} disabled={scoreLoading}
-                          style={{fontSize:10,fontWeight:700,padding:"5px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,0.2)",background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.6)",cursor:"pointer"}}>
-                          {scoreLoading?"…":"↻ Re-score"}
-                        </button>
+
+
+
+                {/* ── AI OVERVIEW ── */}
+                <div style={{background:"white",borderRadius:12,padding:"16px 18px",border:"1px solid #E5E7EB",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:insights?12:0}}>
+                    {scoreData && (
+                      <div style={{flexShrink:0,width:48,height:48,borderRadius:"50%",
+                        background:scoreData.score>=85?"#059669":scoreData.score>=70?"#D97706":scoreData.score>=55?"#EA580C":"#DC2626",
+                        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+                        boxShadow:"0 2px 8px rgba(0,0,0,0.18)"}}>
+                        <div style={{fontSize:16,fontWeight:900,color:"white",lineHeight:1}}>{scoreData.score||0}</div>
+                        <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.85)"}}>{scoreData.grade||"—"}</div>
                       </div>
-
-                      {scoreData.investment_thesis && (
-                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",marginBottom:10,borderLeft:"3px solid "+bg}}>
-                          <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:4}}>Investment Thesis</div>
-                          <div style={{fontSize:12,color:"rgba(255,255,255,0.88)",lineHeight:1.55}}>{scoreData.investment_thesis}</div>
-                        </div>
-                      )}
-
-                      {Object.keys(subs).filter(k=>k!=="lea_bonus").length>0 && (
-                        <div style={{marginBottom:10}}>
-                          <div style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Sub-Scores</div>
-                          <div style={{display:"flex",flexDirection:"column",gap:5}}>
-                            {Object.entries(subs).filter(([k])=>k!=="lea_bonus"&&subLabels[k]).map(([k,v])=>(
-                              <div key={k}>
-                                <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
-                                  <span style={{fontSize:10,color:"rgba(255,255,255,0.6)"}}>{subLabels[k]||k}</span>
-                                  <span style={{fontSize:10,fontWeight:700,color:v>=70?"#6EE7B7":v>=50?"#FCD34D":"#FCA5A5"}}>{v}</span>
-                                </div>
-                                <div style={{height:4,background:"rgba(255,255,255,0.1)",borderRadius:3}}>
-                                  <div style={{height:4,borderRadius:3,width:(Math.min(100,v))+"%",background:v>=70?"#059669":v>=50?"#D97706":"#DC2626",transition:"width 0.5s ease"}}/>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div style={{display:"flex",gap:8}}>
-                        {scoreData.key_strengths?.length>0 && (
-                          <div style={{flex:1,background:"rgba(16,185,129,0.08)",borderRadius:7,padding:"8px 10px"}}>
-                            <div style={{fontSize:9,fontWeight:800,color:"#6EE7B7",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Strengths</div>
-                            {scoreData.key_strengths.map((s,i)=>(
-                              <div key={i} style={{fontSize:10,color:"rgba(255,255,255,0.75)",marginBottom:2,display:"flex",gap:5}}>
-                                <span style={{color:"#6EE7B7",flexShrink:0}}>+</span>{s}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {scoreData.key_risks?.length>0 && (
-                          <div style={{flex:1,background:"rgba(239,68,68,0.08)",borderRadius:7,padding:"8px 10px"}}>
-                            <div style={{fontSize:9,fontWeight:800,color:"#FCA5A5",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:4}}>Risks</div>
-                            {scoreData.key_risks.map((r,i)=>(
-                              <div key={i} style={{fontSize:10,color:"rgba(255,255,255,0.75)",marginBottom:2,display:"flex",gap:5}}>
-                                <span style={{color:"#FCA5A5",flexShrink:0}}>−</span>{r}
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                    )}
+                    {scoreLoading && !scoreData && (
+                      <div style={{flexShrink:0,width:48,height:48,borderRadius:"50%",background:"#F3F4F6",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                        <Spinner size={16}/>
                       </div>
-                    </div>
-                  );
-                })()}
-
-                {!scoreData && !scoreLoading && insights && (
-                  <div style={{display:"flex",justifyContent:"center"}}>
-                    <button onClick={()=>scoreThisFirm(insights)} style={{padding:"7px 18px",borderRadius:8,border:"1px solid #E5E7EB",background:"white",color:"#374151",fontSize:12,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}>
-                      🏆 Generate Investment Score
-                    </button>
-                  </div>
-                )}
-
-                {/* ── AI INSIGHTS BLOCK — primary feature ── */}
-                <div style={{background:"linear-gradient(135deg,#1e1b4b,#312e81)",borderRadius:12,padding:"16px 18px"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#818CF8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+                    )}
                     <div style={{flex:1}}>
-                      <div style={{fontSize:13,fontWeight:800,color:"white"}}>AI Firm Intelligence</div>
-                      <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:1}}>
-                        {aiReady===false
-                          ? "Add GROQ_API_KEY to .env to enable"
-                          : !hasWebsite
-                            ? "No website found — insights unavailable"
-                            : websiteSearching
-                            ? "Searching for website…"
-                            : insights
-                              ? `${insights.pages_fetched||0} pages analysed · ${(insights.confidence||"low").toUpperCase()} confidence`
-                              : foundWebsite
-                                ? `Website found: ${foundWebsite}`
-                                : "Reads the firm's website to find personalisation hooks for your outreach"}
+                      <div style={{fontSize:13,fontWeight:800,color:"#111827"}}>AI Overview</div>
+                      <div style={{fontSize:11,color:"#6B7280",marginTop:1}}>
+                        {aiLoading?"Analysing...":insights?(insights.pages_fetched||0)+" pages analysed":(!hasWebsite?"Paste a URL below":"Pending analysis")}
                       </div>
                     </div>
-                    {insights && (
-                      <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,
-                        background:insights.confidence==="high"?"rgba(16,185,129,0.25)":insights.confidence==="medium"?"rgba(251,191,36,0.25)":"rgba(107,114,128,0.2)",
-                        color:insights.confidence==="high"?"#6EE7B7":insights.confidence==="medium"?"#FCD34D":"#9CA3AF"}}>
-                        {(insights.confidence||"low").toUpperCase()}
+                    {scoreData && scoreData.recommended_action && (
+                      <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:6,
+                        background:"#F3F4F6",color:"#374151",border:"1px solid #E5E7EB",flexShrink:0}}>
+                        {scoreData.recommended_action}
                       </span>
                     )}
+                    {scoreData && (
+                      <button onClick={()=>scoreThisFirm(insights)} disabled={scoreLoading}
+                        style={{fontSize:10,fontWeight:700,padding:"5px 10px",borderRadius:6,
+                          border:"1px solid #E5E7EB",background:"white",color:"#6B7280",cursor:"pointer"}}>
+                        {scoreLoading?"...":"Re-score"}
+                      </button>
+                    )}
+                    {!scoreData && !scoreLoading && insights && (
+                      <button onClick={()=>scoreThisFirm(insights)}
+                        style={{fontSize:10,fontWeight:700,padding:"5px 10px",borderRadius:6,
+                          border:"1px solid #E5E7EB",background:"white",color:"#374151",cursor:"pointer"}}>
+                        Score
+                      </button>
+                    )}
                   </div>
-
-                  {aiError && (
-                    <div style={{background:"rgba(220,38,38,0.15)",border:"1px solid rgba(220,38,38,0.3)",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#FCA5A5",marginBottom:10}}>
-                      ⚠ {aiError}
-                    </div>
-                  )}
-
-                  {/* Insights cards */}
                   {insights && (
-                    <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:10}}>
-
-                      {insights.website_language && insights.website_language!=="English" && (
-                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                          <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:10,background:"rgba(99,102,241,0.3)",color:"#A5B4FC"}}>
-                            🌐 {insights.website_language}
-                          </span>
-                        </div>
-                      )}
-
-                      {insights.community_focus && (
-                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #818CF8"}}>
-                          <div style={{fontSize:9,fontWeight:800,color:"#818CF8",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:4}}>Community Focus</div>
-                          <div style={{fontSize:12,color:"rgba(255,255,255,0.88)",lineHeight:1.5}}>{insights.community_focus}</div>
-                        </div>
-                      )}
-
-                      {insights.unique_differentiators?.length>0 && (
-                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #34D399"}}>
-                          <div style={{fontSize:9,fontWeight:800,color:"#34D399",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>What Makes Them Unique</div>
-                          {insights.unique_differentiators.map((d,i)=>(
-                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.82)",marginBottom:3,display:"flex",gap:6}}>
-                              <span style={{color:"#34D399",flexShrink:0}}>•</span>{d}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {insights.notable_results?.length>0 && (
-                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #FBBF24"}}>
-                          <div style={{fontSize:9,fontWeight:800,color:"#FBBF24",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>Notable Results</div>
-                          {insights.notable_results.map((r,i)=>(
-                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.82)",marginBottom:3,display:"flex",gap:6}}>
-                              <span style={{color:"#FBBF24",flexShrink:0}}>★</span>{r}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {insights.acquisition_signals?.length>0 && (
-                        <div style={{background:"rgba(255,255,255,0.07)",borderRadius:8,padding:"10px 12px",borderLeft:"3px solid #F87171"}}>
-                          <div style={{fontSize:9,fontWeight:800,color:"#F87171",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>Acquisition Signals</div>
-                          {insights.acquisition_signals.map((s,i)=>(
-                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.82)",marginBottom:3,display:"flex",gap:6}}>
-                              <span style={{color:"#F87171",flexShrink:0}}>⚡</span>{s}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {insights.outreach_hooks?.length>0 && (
-                        <div style={{background:"rgba(99,102,241,0.15)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(99,102,241,0.3)"}}>
-                          <div style={{fontSize:9,fontWeight:800,color:"#A5B4FC",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:5}}>Outreach Hooks</div>
-                          {insights.outreach_hooks.map((h,i)=>(
-                            <div key={i} style={{fontSize:11,color:"rgba(255,255,255,0.88)",marginBottom:5,lineHeight:1.5,display:"flex",gap:6}}>
-                              <span style={{color:"#818CF8",flexShrink:0,fontWeight:800}}>{i+1}.</span>{h}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {insights.attorney_count_website>0 && (
-                        <div style={{background:"rgba(16,185,129,0.1)",borderRadius:8,padding:"10px 12px",border:"1px solid rgba(16,185,129,0.25)"}}>
-                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-                            <div style={{fontSize:9,fontWeight:800,color:"#6EE7B7",letterSpacing:"0.08em",textTransform:"uppercase"}}>
-                              Attorney Roster — {insights.attorney_count_website} found on website
-                            </div>
-                            {insights.attorney_page_url && (
-                              <a href={insights.attorney_page_url} target="_blank" rel="noopener"
-                                style={{fontSize:9,fontWeight:700,color:"#6EE7B7",textDecoration:"none",opacity:0.8}}>
-                                VIEW PAGE ↗
-                              </a>
-                            )}
+                    <div style={{borderTop:"1px solid #F3F4F6",paddingTop:10,display:"flex",flexDirection:"column",gap:7}}>
+                      {[
+                        insights.community_focus,
+                        (insights.unique_differentiators||[])[0],
+                        (insights.notable_results||[])[0],
+                        (insights.acquisition_signals||[])[0]||(insights.outreach_hooks||[])[0]
+                      ].filter(Boolean).slice(0,4).map(function(b,i){
+                        return (
+                          <div key={i} style={{display:"flex",gap:8,alignItems:"flex-start"}}>
+                            <span style={{flexShrink:0,width:18,height:18,borderRadius:"50%",background:"#EEF2FF",color:"#4F46E5",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",marginTop:1}}>{i+1}</span>
+                            <span style={{fontSize:12,color:"#374151",lineHeight:1.5}}>{b}</span>
                           </div>
-                          <div style={{display:"flex",flexWrap:"wrap",gap:"4px 8px"}}>
-                            {(insights.attorney_names||[]).slice(0,20).map((name,i)=>(
-                              <span key={i} style={{fontSize:10,color:"rgba(255,255,255,0.75)",background:"rgba(255,255,255,0.07)",borderRadius:4,padding:"2px 6px"}}>
-                                {name}
-                              </span>
-                            ))}
-                            {(insights.attorney_names||[]).length>20 && (
-                              <span style={{fontSize:10,color:"rgba(255,255,255,0.4)",padding:"2px 6px"}}>
-                                +{insights.attorney_names.length-20} more
-                              </span>
-                            )}
-                          </div>
-                          <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",marginTop:5}}>
-                            via {insights.attorney_count_method||"website scrape"}
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
                   )}
-
-                  {/* Website URL input — always visible so user can correct auto-found URL */}
-                  <div style={{marginBottom:8}}>
-                    <div style={{fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.4)",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>
-                      Website URL {effectiveWebsite && !manualWebsite.trim() ? <span style={{color:"rgba(255,255,255,0.25)",fontWeight:400,textTransform:"none"}}>— auto-detected</span> : ""}
+                  {aiError && (
+                    <div style={{marginTop:8,background:"#FEF2F2",border:"1px solid #FECACA",borderRadius:7,padding:"8px 12px",fontSize:11,color:"#DC2626"}}>
+                      {aiError}
                     </div>
+                  )}
+                  <div style={{marginTop:insights?12:8}}>
+                    <div style={{fontSize:9,fontWeight:700,color:"#9CA3AF",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Website URL</div>
                     <div style={{display:"flex",gap:6}}>
                       <input
                         type="text"
                         value={manualWebsite || (insights ? "" : effectiveWebsite)}
                         onChange={e=>{ setManualWebsite(e.target.value); setInsights(null); setAiError(""); }}
                         onKeyDown={e=>{ if(e.key==="Enter" && (manualWebsite.trim()||effectiveWebsite)) runAIAnalysis(); }}
-                        placeholder={websiteSearching ? "Searching for website…" : effectiveWebsite || "Paste website URL here"}
-                        style={{
-                          flex:1, padding:"8px 11px", borderRadius:7,
-                          border:"1px solid rgba(255,255,255,0.15)",
-                          background:"rgba(255,255,255,0.08)",
-                          color:"white", fontSize:12, outline:"none",
-                          fontFamily:"inherit",
-                        }}
+                        placeholder={websiteSearching ? "Searching for website..." : effectiveWebsite || "Paste website URL here"}
+                        style={{flex:1,padding:"8px 11px",borderRadius:7,border:"1px solid #E5E7EB",
+                          background:"#F9FAFB",color:"#111827",fontSize:12,outline:"none",fontFamily:"inherit"}}
                       />
-                      {(manualWebsite.trim()) && (
+                      {manualWebsite.trim() && (
                         <button onClick={()=>{ setManualWebsite(""); setInsights(null); setAiError(""); }}
-                          style={{padding:"8px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,0.15)",background:"rgba(255,255,255,0.07)",color:"rgba(255,255,255,0.4)",fontSize:12,cursor:"pointer"}}>
-                          ×
+                          style={{padding:"8px 10px",borderRadius:7,border:"1px solid #E5E7EB",background:"white",color:"#9CA3AF",fontSize:12,cursor:"pointer"}}>
+                          x
                         </button>
                       )}
                     </div>
-                    {manualWebsite.trim() && (
-                      <div style={{fontSize:10,color:"rgba(99,102,241,0.9)",marginTop:4}}>Using your URL — auto-detection overridden</div>
-                    )}
                   </div>
-
                   <button onClick={runAIAnalysis}
                     disabled={aiLoading||aiReady===false||!hasWebsite}
-                    style={{width:"100%",padding:"9px 0",borderRadius:8,border:"none",
-                      background: insights
-                        ? "rgba(255,255,255,0.1)"
-                        : aiLoading||aiReady===false||!hasWebsite
-                          ? "rgba(255,255,255,0.08)"
-                          : "rgba(255,255,255,0.92)",
-                      color: insights
-                        ? "rgba(255,255,255,0.5)"
-                        : aiLoading||aiReady===false||!hasWebsite
-                          ? "rgba(255,255,255,0.25)"
-                          : "#1e1b4b",
-                      fontSize:12, fontWeight:800, cursor: aiLoading||aiReady===false||!hasWebsite?"not-allowed":"pointer",
-                      display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
-                    {aiLoading ? <><Spinner size={12} color="#818CF8"/> Analysing…</> : insights ? "↻ Re-analyse" : "Analyse Firm Website"}
+                    style={{width:"100%",marginTop:8,padding:"9px 0",borderRadius:8,
+                      background:aiLoading||aiReady===false||!hasWebsite?"#F3F4F6":insights?"#F9FAFB":"#111827",
+                      color:aiLoading||aiReady===false||!hasWebsite?"#9CA3AF":insights?"#6B7280":"white",
+                      fontSize:12,fontWeight:800,cursor:aiLoading||aiReady===false||!hasWebsite?"not-allowed":"pointer",
+                      display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+                      border:insights?"1px solid #E5E7EB":"none"}}>
+                    {aiLoading ? <><Spinner size={12} color="#818CF8"/> Analysing...</> : insights ? "Re-analyse" : "Analyse Firm Website"}
                   </button>
                 </div>
 
