@@ -1136,6 +1136,77 @@ async def monday_update_item(request: Request):
     return {"ok": True}
 
 
+@app.post("/api/monday/add-firm")
+async def monday_add_firm(request: Request):
+    """Add a law firm as a new item to the LEA Monday.com CRM board."""
+    token = os.getenv("MONDAY_API_TOKEN", "")
+    if not token:
+        raise HTTPException(status_code=503, detail="MONDAY_API_TOKEN not set in environment")
+
+    body          = await request.json()
+    firm_name     = body.get("name", "Unknown Firm")
+    city          = body.get("city", "")
+    state_val     = body.get("state", "")
+    google_stars  = body.get("google_stars", 0)
+    review_count  = body.get("google_review_count", 0)
+    score         = body.get("score", "")
+    grade         = body.get("grade", "")
+    current_user  = body.get("current_user", "LEA Team")
+    insights_list = body.get("insights_bullets", [])   # list of strings
+
+    # Build comments field
+    lines = []
+    lines.append("Location: " + city + ", " + state_val)
+    if google_stars:
+        lines.append("Google Rating: " + str(google_stars) + "/5.0 (" + str(review_count) + " reviews)")
+    if score:
+        lines.append("LEA Score: " + str(score) + " (" + str(grade) + ")")
+    if insights_list:
+        lines.append("AI Insights:")
+        for i, b in enumerate(insights_list[:4], 1):
+            lines.append("  " + str(i) + ". " + str(b))
+
+    comments_text = "\n".join(lines)
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+    column_values = json.dumps({
+        "text_mm47da8t": current_user,
+        "date_mm47tb1m": {"date": today_str},
+        "long_text4": {"text": comments_text},
+    })
+
+    mutation = """
+    mutation($board_id: ID!, $group_id: String!, $item_name: String!, $col_vals: JSON!) {
+      create_item(
+        board_id: $board_id,
+        group_id: $group_id,
+        item_name: $item_name,
+        column_values: $col_vals
+      ) { id name }
+    }
+    """
+    variables = {
+        "board_id": "18417398911",
+        "group_id": "topics",
+        "item_name": firm_name,
+        "col_vals": column_values,
+    }
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.post(
+            MONDAY_API,
+            json={"query": mutation, "variables": variables},
+            headers={"Authorization": token, "Content-Type": "application/json", "API-Version": "2024-01"},
+        )
+    data = resp.json()
+    if "errors" in data:
+        raise HTTPException(status_code=400, detail=data["errors"][0].get("message", "Monday create_item error"))
+
+    item = data.get("data", {}).get("create_item", {})
+    item_id = item.get("id", "")
+    return {"ok": True, "item_id": item_id, "item_url": "https://view.monday.com/" + str(item_id)}
+
+
 # ── AI Engine Endpoints ───────────────────────────────────────────────────────
 
 class AIAnalyzeRequest(BaseModel):

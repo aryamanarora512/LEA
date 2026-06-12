@@ -368,8 +368,46 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
   // Google Sheets link state
   const [sheetLinked,   setSheetLinked]   = useState(false);
   const [sheetLinking,  setSheetLinking]  = useState(false);
+  const [mondayLinked,  setMondayLinked]  = useState(false);
+  const [mondayLinking, setMondayLinking] = useState(false);
+  const [mondayError,   setMondayError]   = useState("");
 
   const isWatchlisted = watchlist.some(w => w.name===firm.name && w.city===firm.city);
+
+  async function addToMonday() {
+    if (mondayLinking || mondayLinked) return;
+    setMondayLinking(true);
+    setMondayError("");
+    try {
+      var bullets = [];
+      if (insights && (insights.unique_differentiators||[]).length > 0) bullets.push(insights.unique_differentiators[0]);
+      if (insights && (insights.unique_differentiators||[]).length > 1) bullets.push(insights.unique_differentiators[1]);
+      if (insights && (insights.notable_results||[]).length > 0) bullets.push(insights.notable_results[0]);
+      if (insights && insights.community_focus) bullets.push(insights.community_focus);
+      var payload = {
+        name: firm.name,
+        city: firm.city || "",
+        state: firm.state || "",
+        google_stars: firm.google_stars || 0,
+        google_review_count: firm.google_review_count || 0,
+        score: scoreData ? scoreData.score : "",
+        grade: scoreData ? scoreData.grade : "",
+        current_user: currentUser || "LEA Team",
+        insights_bullets: bullets,
+      };
+      var resp = await fetch("/api/monday/add-firm", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) { var e = await resp.json(); throw new Error(e.detail||"Monday error"); }
+      setMondayLinked(true);
+    } catch(err) {
+      setMondayError(err.message||"Failed to add to Monday");
+    } finally {
+      setMondayLinking(false);
+    }
+  }
 
   // Check AI availability once
   useEffect(() => {
@@ -527,9 +565,19 @@ function FirmDetailPanel({ firm, watchlist, onToggleWatchlist, currentUser }) {
               background:sheetLinked?"rgba(16,185,129,0.2)":sheetLinking?"rgba(255,255,255,0.08)":"rgba(52,211,153,0.15)",
               color:sheetLinked?"#6EE7B7":sheetLinking?"rgba(255,255,255,0.35)":"#6EE7B7",
               fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,border:"1px solid rgba(52,211,153,0.3)"}}>
-            {sheetLinking ? <><Spinner size={11} color="#6EE7B7"/>Linking…</> : sheetLinked ? "✓ Added to Sheet" : "Link to Sheet"}
+            {sheetLinking ? <><Spinner size={11} color="#6EE7B7"/>Linking...</> : sheetLinked ? "Added to Sheet" : "Link to Sheet"}
+          </button>
+          <button onClick={addToMonday} disabled={mondayLinking||mondayLinked}
+            style={{flex:1,padding:"8px 0",borderRadius:8,cursor:mondayLinked?"default":mondayLinking?"not-allowed":"pointer",
+              background:mondayLinked?"rgba(251,130,4,0.2)":mondayLinking?"rgba(255,255,255,0.08)":"rgba(251,130,4,0.15)",
+              color:mondayLinked?"#FB8204":mondayLinking?"rgba(255,255,255,0.35)":"#FB8204",
+              fontSize:12,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",gap:6,border:"1px solid rgba(251,130,4,0.35)"}}>
+            {mondayLinking ? <><Spinner size={11} color="#FB8204"/>Adding...</> : mondayLinked ? "Added to Monday" : "Add to Monday"}
           </button>
         </div>
+        {mondayError && (
+          <div style={{fontSize:10,color:"#FCA5A5",marginBottom:6,textAlign:"center"}}>{mondayError}</div>
+        )}
         <div style={{display:"flex",gap:10}}>
           <button onClick={()=>{
             var bullets=[];
